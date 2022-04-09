@@ -38,6 +38,7 @@ keyberon = { path = "../keyberon" }
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7.1"
 tinybmp = "0.3.1"
+rotary-encoder-hal = "0.5.0"
 
 [features]
 default = [ "home-mods" ]

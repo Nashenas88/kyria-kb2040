@@ -6,15 +6,16 @@
 #![allow(dead_code)]
 
 use crate::anim::{AnimState, AnimationController};
+use crate::fmt::Wrapper;
 use crate::layout::CustomAction;
 use crate::leds::UsualLeds;
 use crate::ws2812::Ws2812;
 use adafruit_kb2040 as bsp;
 use bsp::hal::clocks::init_clocks_and_plls;
-use bsp::hal::gpio::bank0::{Gpio0, Gpio1};
-use bsp::hal::gpio::bank0::{Gpio2, Gpio3};
+use bsp::hal::gpio::bank0::{Gpio0, Gpio1, Gpio2, Gpio28, Gpio29, Gpio3};
 use bsp::hal::gpio::DynPin;
 use bsp::hal::gpio::FunctionI2C;
+use bsp::hal::gpio::PullUpInput;
 use bsp::hal::gpio::{FunctionUart, Pin};
 use bsp::hal::pio::PIOExt;
 use bsp::hal::pio::SM0;
@@ -40,6 +41,7 @@ use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
 use panic_halt as _;
+use rotary_encoder_hal::{Direction, Rotary};
 use smart_leds::{brightness, gamma};
 use ssd1306::mode::{DisplayConfig, TerminalMode};
 use ssd1306::prelude::I2CInterface;
@@ -76,8 +78,6 @@ const REBOOT_SIGNAL: u8 = 0b1001_0111;
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
-    use crate::fmt::Wrapper;
-
     use super::*;
 
     /// The number of times a switch needs to be in the same state for the
@@ -115,6 +115,8 @@ mod app {
             >,
         >,
         // uart: UartPeripheral<Enabled, UART0, (UartTx, UartRx)>,
+        rotary: Rotary<Pin<Gpio29, PullUpInput>, Pin<Gpio28, PullUpInput>>,
+        rotary_pos: isize,
         display: Display,
         timer: bsp::hal::timer::Timer,
         alarm: bsp::hal::timer::Alarm0,
@@ -178,6 +180,8 @@ mod app {
 
         let enc_a = pins.a3;
         let enc_b = pins.a2;
+
+        let rotary = Rotary::new(enc_a.into_pull_up_input(), enc_b.into_pull_up_input());
 
         let sda = pins.d2.into_mode::<bsp::hal::gpio::FunctionI2C>();
         let scl = pins.d3.into_mode::<bsp::hal::gpio::FunctionI2C>();
@@ -329,6 +333,8 @@ mod app {
 
         (
             Shared {
+                rotary,
+                rotary_pos: 0,
                 usb_class,
                 usb_dev,
                 display,
@@ -365,7 +371,7 @@ mod app {
     }
 
     /// Process events for the layout then generate and send the Keyboard HID Report.
-    #[task(priority = 2, capacity = 8, shared = [/*uart,*/ usb_dev, usb_class, layout, display])]
+    #[task(priority = 2, capacity = 8, shared = [/*uart,*/ usb_dev, usb_class, layout, display, rotary])]
     fn handle_event(mut c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
@@ -377,7 +383,7 @@ mod app {
                     Event::Release(x, y) => ('R', x, y),
                 };
                 let mut wrapper = Wrapper::new(&mut buf);
-                let _ = write!(wrapper, "{}: ({},{})", typ, x, y);
+                let _ = writeln!(wrapper, "{}: ({},{})", typ, x, y);
                 let written = wrapper.written();
                 drop(wrapper);
                 let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
@@ -428,11 +434,14 @@ mod app {
     #[task(
         binds = TIMER_IRQ_0,
         priority = 1,
-        shared = [matrix, debouncer, watchdog, timer, alarm, /*uart,*/ &transform, &is_right],
+        shared = [matrix, debouncer, watchdog, timer, alarm, /*uart,*/ &transform, &is_right, rotary, rotary_pos, display],
     )]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
+        let rotary = c.shared.rotary;
+        let rotary_pos = c.shared.rotary_pos;
+        let display = c.shared.display;
 
         // Immediately clear the interrupt and schedule the next scan alarm.
         (timer, alarm).lock(|t, a| {
@@ -451,6 +460,29 @@ mod app {
             .debouncer
             .events(keys_pressed)
             .map(c.shared.transform);
+
+        (rotary, rotary_pos, display).lock(|r, p, d| {
+            let dir = match r.update().unwrap() {
+                Direction::Clockwise => {
+                    *p += 1;
+                    1
+                }
+                Direction::CounterClockwise => {
+                    *p -= 1;
+                    -1
+                }
+                Direction::None => 0,
+            };
+
+            if dir != 0 {
+                let mut buf = [0u8; 64];
+                let mut wrapper = Wrapper::new(&mut buf);
+                let _ = writeln!(wrapper, "E: {:+} => {}", dir, p);
+                let written = wrapper.written();
+                drop(wrapper);
+                let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
+            }
+        });
 
         // If we're on the right side of the keyboard, just send the events to the event handler
         // so they can be sent over USB.
