@@ -2,8 +2,6 @@
 
 #![no_std]
 #![no_main]
-// Should just be for the `ws` in Shared, but rtic proc macros don't support attributes =/
-#![allow(dead_code)]
 
 use crate::anim::{AnimState, AnimationController};
 use crate::fmt::Wrapper;
@@ -11,28 +9,26 @@ use crate::layout::CustomAction;
 use crate::leds::UsualLeds;
 use crate::ws2812::Ws2812;
 use adafruit_kb2040 as bsp;
+use arraydeque::{behavior, ArrayDeque};
 use bsp::hal::clocks::init_clocks_and_plls;
-use bsp::hal::gpio::bank0::{Gpio0, Gpio1, Gpio2, Gpio28, Gpio29, Gpio3};
-use bsp::hal::gpio::DynPin;
-use bsp::hal::gpio::FunctionI2C;
-use bsp::hal::gpio::PullUpInput;
-use bsp::hal::gpio::{FunctionUart, Pin};
-use bsp::hal::pio::PIOExt;
-use bsp::hal::pio::SM0;
+use bsp::hal::gpio::bank0::{Gpio0, Gpio1, Gpio11, Gpio12, Gpio2, Gpio3};
+use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PullUpInput};
+use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
+use bsp::hal::pio::{PIOExt, SM0};
 use bsp::hal::timer::Timer;
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
-use bsp::hal::Clock;
-use bsp::hal::Sio;
-use bsp::hal::I2C;
+use bsp::hal::{Clock, Sio, I2C};
 use bsp::pac::{I2C1, PIO0};
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
+use core::num::Wrapping;
 use embedded_graphics::draw_target::DrawTargetExt;
 use embedded_graphics::image::Image;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::Drawable;
+use embedded_hal::digital::v2::{InputPin, OutputPin};
 use embedded_hal::prelude::*;
 use embedded_time::duration::Extensions as _;
 use embedded_time::rate::Extensions as _;
@@ -57,22 +53,26 @@ mod fmt;
 mod layout;
 mod leds;
 mod matrix;
+mod pimorino_trackball;
 mod ws2812;
 
-#[cfg(feature = "left-kb")]
-const IS_RIGHT: bool = false;
-#[cfg(not(feature = "left-kb"))]
-const IS_RIGHT: bool = true;
-
-type UartTx = Pin<Gpio0, FunctionUart>;
-type UartRx = Pin<Gpio1, FunctionUart>;
 type Display = Ssd1306<
     I2CInterface<I2C<I2C1, (Pin<Gpio2, FunctionI2C>, Pin<Gpio3, FunctionI2C>)>>,
     DisplaySize128x64,
     TerminalMode,
 >;
+type RotaryEncoder = Rotary<DynPin, DynPin>;
+type I2CPeripheral =
+    I2CPeripheralEventIterator<bsp::pac::I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type I2CController = I2C<bsp::pac::I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type ScannedKeys = ArrayDeque<[u8; 16], behavior::Wrapping>;
 
-const REBOOT_SIGNAL: u8 = 0b1001_0111;
+const I2C_PERIPHERAL_ADDR: u8 = 0x56;
+
+pub enum Either<T, U> {
+    Left(T),
+    Right(U),
+}
 
 // Rtic entry point. Uses the kb2040's Peripheral Access API (pac), and uses the
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
@@ -84,7 +84,6 @@ mod app {
     /// debouncer to consider it a press.
     const DEBOUNCER_MIN_STATE_COUNT: u16 = 30;
 
-    const STOP_BIT_MASK: u8 = 0b1000_0000;
     const PRESSED_BIT_MASK: u8 = 0b0100_0000;
     const PRESSED_SHIFT: u8 = 6;
     const ROW_BIT_MASK: u8 = 0b0011_1000;
@@ -106,7 +105,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        usb_dev: usb_device::device::UsbDevice<'static, bsp::hal::usb::UsbBus>,
+        usb_dev: Option<usb_device::device::UsbDevice<'static, bsp::hal::usb::UsbBus>>,
         usb_class: Option<
             keyberon::hid::HidClass<
                 'static,
@@ -114,9 +113,9 @@ mod app {
                 keyberon::keyboard::Keyboard<UsualLeds>,
             >,
         >,
-        // uart: UartPeripheral<Enabled, UART0, (UartTx, UartRx)>,
-        rotary: Rotary<Pin<Gpio29, PullUpInput>, Pin<Gpio28, PullUpInput>>,
-        rotary_pos: isize,
+        i2c0: Either<I2CPeripheral, I2CController>,
+        rotary: RotaryEncoder,
+        rotary_pos: Wrapping<u8>,
         display: Display,
         timer: bsp::hal::timer::Timer,
         alarm: bsp::hal::timer::Alarm0,
@@ -133,6 +132,8 @@ mod app {
         is_right: bool,
         #[lock_free]
         anim_controller: AnimationController,
+        boot_button: Pin<Gpio11, PullUpInput>,
+        scanned_events: ScannedKeys,
     }
 
     #[local]
@@ -164,42 +165,76 @@ mod app {
             &mut resets,
         );
 
-        let col0 = pins.mosi;
-        let col1 = pins.d10;
-        let col2 = pins.d9;
-        let col3 = pins.d8;
-        let col4 = pins.d7;
-        let col5 = pins.d6;
-        let col6 = pins.d5;
-        let col7 = pins.d4;
+        let (d7, miso, is_right) = {
+            let mut maybe_row_3 = pins.d7.into_push_pull_output();
+            let maybe_col_7 = pins.miso.into_pull_up_input();
+            let is_right = maybe_row_3
+                .set_low()
+                .and_then(|()| {
+                    cortex_m::asm::delay(100);
+                    maybe_col_7.is_low()
+                })
+                .and_then(|is_right| maybe_row_3.set_high().map(|()| is_right))
+                .map(|is_right| {
+                    cortex_m::asm::delay(100);
+                    is_right
+                })
+                .unwrap_or(false);
+            (maybe_row_3, maybe_col_7, is_right)
+        };
 
-        let row0 = pins.a1;
-        let row1 = pins.a0;
-        let row2 = pins.sclk;
-        let row3 = pins.miso;
+        let rotary = if is_right {
+            Rotary::new(
+                pins.a3.into_pull_up_input().into(),
+                pins.a2.into_pull_up_input().into(),
+            )
+        } else {
+            Rotary::new(
+                pins.a2.into_pull_up_input().into(),
+                pins.a3.into_pull_up_input().into(),
+            )
+        };
 
-        let enc_a = pins.a3;
-        let enc_b = pins.a2;
+        let sda0 = pins.sda.into_mode::<bsp::hal::gpio::FunctionI2C>();
+        let scl0 = pins.rx.into_mode::<bsp::hal::gpio::FunctionI2C>();
 
-        let rotary = Rotary::new(enc_a.into_pull_up_input(), enc_b.into_pull_up_input());
+        // Right functions as the I2C controller for communication between the halves and for USB.
+        let i2c0 = if is_right {
+            Either::Right(bsp::hal::I2C::i2c0(
+                c.device.I2C0,
+                sda0,
+                scl0,
+                100.kHz(),
+                &mut resets,
+                clocks.peripheral_clock.freq(),
+            ))
+        } else {
+            Either::Left(bsp::hal::I2C::new_peripheral_event_iterator(
+                c.device.I2C0,
+                sda0,
+                scl0,
+                &mut resets,
+                I2C_PERIPHERAL_ADDR as u16,
+            ))
+        };
 
-        let sda = pins.d2.into_mode::<bsp::hal::gpio::FunctionI2C>();
-        let scl = pins.d3.into_mode::<bsp::hal::gpio::FunctionI2C>();
+        let sda1 = pins.d2.into_mode::<bsp::hal::gpio::FunctionI2C>();
+        let scl1 = pins.d3.into_mode::<bsp::hal::gpio::FunctionI2C>();
 
         // Create the I²C driver, using the two pre-configured pins. This will fail
         // at compile time if the pins are in the wrong mode, or if this I²C
         // peripheral isn't available on these pins!
-        let i2c = bsp::hal::I2C::i2c1(
+        let i2c1 = bsp::hal::I2C::i2c1(
             c.device.I2C1,
-            sda,
-            scl,
+            sda1,
+            scl1,
             400.kHz(),
             &mut resets,
             clocks.peripheral_clock.freq(),
         );
 
         // Create the I²C display interface:
-        let interface = ssd1306::I2CDisplayInterface::new(i2c);
+        let interface = ssd1306::I2CDisplayInterface::new(i2c1);
 
         // Create a driver instance and initialize:
         let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate180)
@@ -223,8 +258,6 @@ mod app {
         display.init().unwrap();
 
         let rgb = pins.tx;
-        let data = pins.rx;
-
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
         let ws = Ws2812::new(
@@ -236,48 +269,57 @@ mod app {
 
         cortex_m::asm::delay(1000);
 
-        let is_right = IS_RIGHT; //side.is_high().unwrap();
-
         // Map the keys on the right side of the keyboard since the wiring will be reversed across
         // the columns.
         let transform: fn(keyberon::layout::Event) -> keyberon::layout::Event = if is_right {
-            |e| e.transform(|i: u8, j: u8| -> (u8, u8) { (i, 11 - j) })
+            |e| e.transform(|i: u8, j: u8| -> (u8, u8) { (i, 8 + j) })
         } else {
             |e| e
         };
-
-        // let mut uart = UartPeripheral::<_, _, _>::new(c.device.UART0, (tx, rx), &mut resets)
-        //     .enable(
-        //         uart::common_configs::_9600_8_N_1,
-        //         clocks.peripheral_clock.into(),
-        //     )
-        //     .unwrap();
-
-        // // Right side enables reading to get events, left side enabled reading to get reboot signal.
-        // uart.enable_rx_interrupt();
 
         // Build the matrix that will inform which specific combinations of row and col switches
         // are being pressed.
         let matrix: matrix::Matrix<DynPin, DynPin, NCOLS, NROWS> =
             cortex_m::interrupt::free(move |_cs| {
-                matrix::Matrix::new(
-                    [
-                        col0.into_pull_up_input().into(),
-                        col1.into_pull_up_input().into(),
-                        col2.into_pull_up_input().into(),
-                        col3.into_pull_up_input().into(),
-                        col4.into_pull_up_input().into(),
-                        col5.into_pull_up_input().into(),
-                        col6.into_pull_up_input().into(),
-                        col7.into_pull_up_input().into(),
-                    ],
-                    [
-                        row0.into_push_pull_output().into(),
-                        row1.into_push_pull_output().into(),
-                        row2.into_push_pull_output().into(),
-                        row3.into_push_pull_output().into(),
-                    ],
-                )
+                if is_right {
+                    matrix::Matrix::new(
+                        [
+                            pins.d8.into_pull_up_input().into(),
+                            pins.d9.into_pull_up_input().into(),
+                            pins.d10.into_pull_up_input().into(),
+                            pins.mosi.into_pull_up_input().into(),
+                            miso.into_pull_up_input().into(),
+                            pins.sclk.into_pull_up_input().into(),
+                            pins.a0.into_pull_up_input().into(),
+                            pins.a1.into_pull_up_input().into(),
+                        ],
+                        [
+                            pins.d4.into_push_pull_output().into(),
+                            pins.d5.into_push_pull_output().into(),
+                            pins.d6.into_push_pull_output().into(),
+                            d7.into_push_pull_output().into(),
+                        ],
+                    )
+                } else {
+                    matrix::Matrix::new(
+                        [
+                            pins.mosi.into_pull_up_input().into(),
+                            pins.d10.into_pull_up_input().into(),
+                            pins.d9.into_pull_up_input().into(),
+                            pins.d8.into_pull_up_input().into(),
+                            d7.into_pull_up_input().into(),
+                            pins.d6.into_pull_up_input().into(),
+                            pins.d5.into_pull_up_input().into(),
+                            pins.d4.into_pull_up_input().into(),
+                        ],
+                        [
+                            pins.a1.into_push_pull_output().into(),
+                            pins.a0.into_push_pull_output().into(),
+                            pins.sclk.into_push_pull_output().into(),
+                            miso.into_push_pull_output().into(),
+                        ],
+                    )
+                }
             })
             .unwrap();
 
@@ -299,12 +341,8 @@ mod app {
 
         // The alarm used to trigger the led animations scan.
         let mut alarm1 = timer.alarm_1().unwrap();
-
-        // LEDs only conneccted on right keyboard for now.
-        // if cfg!(feature = "anim") && is_right {
         let _ = alarm1.schedule(LED_ANIM_TIME_US.microseconds());
         alarm1.enable_interrupt(&mut timer);
-        // }
 
         // The bus that is used to manage the device and class below.
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
@@ -323,10 +361,16 @@ mod app {
 
         // The class which specifies this device supports HID Keyboard reports.
         let usb_class =
-            IS_RIGHT.then(|| keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, UsualLeds));
+            is_right.then(|| keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, UsualLeds));
         // The device which represents the device to the system as being a "Keyberon"
         // keyboard.
-        let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
+        let usb_dev = is_right.then(|| keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() }));
+
+        if is_right {
+            display.write_str("Right\n").unwrap();
+        } else {
+            display.write_str("Left\n").unwrap();
+        }
 
         // Start watchdog and feed it with the lowest priority task at 1000hz
         watchdog.start(10_000.microseconds());
@@ -334,11 +378,11 @@ mod app {
         (
             Shared {
                 rotary,
-                rotary_pos: 0,
+                rotary_pos: Wrapping(0),
                 usb_class,
                 usb_dev,
                 display,
-                // uart,
+                i2c0,
                 timer,
                 alarm,
                 alarm1,
@@ -350,6 +394,8 @@ mod app {
                 transform,
                 is_right,
                 anim_controller: AnimationController::new(),
+                boot_button: pins.d11.into_pull_up_input(),
+                scanned_events: ArrayDeque::new(),
             },
             Local {},
             init::Monotonics(),
@@ -357,16 +403,17 @@ mod app {
     }
 
     /// Usb interrupt handler. Runs every time the host requests new data.
-    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [usb_dev, usb_class])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [usb_dev, usb_class, &is_right])]
     fn usb_rx(c: usb_rx::Context) {
         let usb_d = c.shared.usb_dev;
         let usb_c = c.shared.usb_class;
+        let is_right = c.shared.is_right;
         (usb_d, usb_c).lock(|d, c| {
-            if !IS_RIGHT {
+            if !is_right {
                 return;
             }
 
-            let _ = d.poll(&mut [c.as_mut().unwrap()]);
+            let _ = d.as_mut().unwrap().poll(&mut [c.as_mut().unwrap()]);
         });
     }
 
@@ -395,12 +442,8 @@ mod app {
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
         let report: key_code::KbHidReport = c.shared.layout.lock(|l| {
-            if let keyberon::layout::CustomEvent::Press(CustomAction::BootReset) = l.tick() {
-                // Send the reboot signal to the left side before we reboot ourselves.
-                // c.shared
-                //     .uart
-                //     .lock(|u| u.write_full_blocking(&[REBOOT_SIGNAL]));
-                bsp::hal::rom_data::reset_to_usb_boot(0, 0);
+            if let keyberon::layout::CustomEvent::Press(_custom_action) = l.tick() {
+                // update led state, communicate to other half
             }
             l.keycodes().collect()
         });
@@ -419,7 +462,7 @@ mod app {
         }
 
         // If the device is not configured yet, we need to bail out.
-        if c.shared.usb_dev.lock(|d| d.state()) != UsbDeviceState::Configured {
+        if c.shared.usb_dev.lock(|d| d.as_ref().unwrap().state()) != UsbDeviceState::Configured {
             return;
         }
 
@@ -434,14 +477,21 @@ mod app {
     #[task(
         binds = TIMER_IRQ_0,
         priority = 1,
-        shared = [matrix, debouncer, watchdog, timer, alarm, /*uart,*/ &transform, &is_right, rotary, rotary_pos, display],
+        shared = [matrix, debouncer, watchdog, timer, alarm, &transform, &is_right, rotary, rotary_pos, display, &boot_button, scanned_events, i2c0],
     )]
-    fn scan_timer_irq(mut c: scan_timer_irq::Context) {
+    fn scan_timer_irq(c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
         let rotary = c.shared.rotary;
         let rotary_pos = c.shared.rotary_pos;
-        let display = c.shared.display;
+        let mut display = c.shared.display;
+        let boot_button = c.shared.boot_button;
+        let mut scanned_events = c.shared.scanned_events;
+        let mut i2c0 = c.shared.i2c0;
+
+        if boot_button.is_low().unwrap() {
+            bsp::hal::rom_data::reset_to_usb_boot(0, 0);
+        }
 
         // Immediately clear the interrupt and schedule the next scan alarm.
         (timer, alarm).lock(|t, a| {
@@ -461,7 +511,7 @@ mod app {
             .events(keys_pressed)
             .map(c.shared.transform);
 
-        (rotary, rotary_pos, display).lock(|r, p, d| {
+        (rotary, rotary_pos, &mut display).lock(|r, p, d| {
             let dir = match r.update().unwrap() {
                 Direction::Clockwise => {
                     *p += 1;
@@ -477,7 +527,7 @@ mod app {
             if dir != 0 {
                 let mut buf = [0u8; 64];
                 let mut wrapper = Wrapper::new(&mut buf);
-                let _ = writeln!(wrapper, "E: {:+} => {}", dir, p);
+                let _ = writeln!(wrapper, "E: {:+} => {:>4}", dir, p);
                 let written = wrapper.written();
                 drop(wrapper);
                 let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
@@ -487,71 +537,145 @@ mod app {
         // If we're on the right side of the keyboard, just send the events to the event handler
         // so they can be sent over USB.
         if *c.shared.is_right {
+            let data = i2c0.lock(|i2c| {
+                if let Either::Right(i2c) = i2c {
+                    let mut buf = [0u8; 16];
+                    i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)
+                        .unwrap();
+                    buf
+                } else {
+                    unreachable!()
+                }
+            });
+
+            for d in data {
+                // Zeros indicate no key event.
+                if d == 0 {
+                    break;
+                }
+
+                let i = (d & ROW_BIT_MASK) >> ROW_SHIFT;
+                let j = (d & COL_BIT_MASK) >> COL_SHIFT;
+                let is_pressed = (d & PRESSED_BIT_MASK) > 0;
+
+                handle_event::spawn(Some(if is_pressed {
+                    Event::Press(i, j)
+                } else {
+                    Event::Release(i, j)
+                }))
+                .unwrap();
+            }
+
             for event in deb_events {
                 handle_event::spawn(Some(event)).unwrap();
             }
             handle_event::spawn(None).unwrap();
         } else {
+            // for event in deb_events {
+            //     buf.fill_with(|| 0);
+            //     let mut wrapper = Wrapper::new(&mut buf);
+            //     let (typ, x, y) = match event {
+            //         Event::Press(x, y) => ("P", x, y),
+            //         Event::Release(x, y) => ("R", x, y),
+            //     };
+            //     let _ = writeln!(wrapper, "C{}: ({},{})", typ, x, y);
+            //     let written = wrapper.written();
+            //     drop(wrapper);
+            //     display.lock(|d| {
+            //         d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) })
+            //             .unwrap()
+            //     });
+            // }
+
             // coordinate and press/release is encoded in a single byte
             // the first 6 bits are the coordinate and therefore cannot go past 63
             // The last bit is to signify if it is the last byte to be sent, but
             // this is not currently used as serial rx is the highest priority
             // end? press=1/release=0 key_number
             //   7         6            543210
-            // let mut es: [Option<keyberon::layout::Event>; 16] = [None; 16];
-            // let mut last = 0;
-            // for (i, e) in deb_events.enumerate() {
-            //     es[i] = Some(e);
-            //     last = i;
-            // }
-            // let stop_index = last + 1;
-            // let mut byte: u8;
-            // for (idx, e) in es.iter().enumerate().take(stop_index) {
-            //     if let Some(ev) = e {
-            //         let (i, j) = ev.coord();
-            //         // 7 is the max value we can encode, and the highest row/col count on this board.
-            //         if i > 7 || j > 7 {
-            //             continue;
-            //         }
+            let mut es: [Option<keyberon::layout::Event>; 16] = [None; 16];
+            let mut last = 0;
+            for (i, e) in deb_events.enumerate() {
+                es[i] = Some(e);
+                last = i;
+            }
+            let stop_index = last + 1;
+            let mut byte: u8;
+            for (idx, e) in es.iter().enumerate().take(stop_index) {
+                if let Some(ev) = e {
+                    let (i, j) = ev.coord();
+                    // 7 is the max value we can encode, and the highest row/col count on this board.
+                    if i > 7 || j > 7 {
+                        continue;
+                    }
 
-            //         byte = (j << COL_SHIFT) & COL_BIT_MASK;
-            //         byte |= (i << ROW_SHIFT) & ROW_BIT_MASK;
-            //         byte |= (ev.is_press() as u8) << PRESSED_SHIFT;
-            //         if idx + 1 == stop_index {
-            //             byte |= 0b1000_0000;
-            //         }
+                    byte = (j << COL_SHIFT) & COL_BIT_MASK;
+                    byte |= (i << ROW_SHIFT) & ROW_BIT_MASK;
+                    byte |= (ev.is_press() as u8) << PRESSED_SHIFT;
+                    if idx + 1 == stop_index {
+                        byte |= 0b1000_0000;
+                    }
 
-            //         c.shared.uart.lock(|u| u.write_full_blocking(&[byte]));
-            //     }
-            // }
+                    scanned_events.lock(|s: &mut ArrayDeque<[u8; 16], behavior::Wrapping>| {
+                        let _ = s.push_back(byte);
+                    });
+                }
+            }
         }
     }
 
-    // #[task(binds = UART0_IRQ, priority = 4, shared = [uart])]
-    // fn rx(mut c: rx::Context) {
-    //     let mut data = [0u8; 1];
-    //     if let Err(e) = c.shared.uart.lock(|u| u.read_full_blocking(&mut data)) {
-    //         return;
-    //     }
-    //     if IS_RIGHT {
-    //         let [d] = data;
-    //         let i = (d & ROW_BIT_MASK) >> ROW_SHIFT;
-    //         let j = (d & COL_BIT_MASK) >> COL_SHIFT;
-    //         let is_pressed = (d & PRESSED_BIT_MASK) > 0;
+    const READ_KEYS: u8 = 0x80;
+    const SET_UI: u8 = 0x81;
 
-    //         handle_event::spawn(Some(if is_pressed {
-    //             Event::Press(i, j)
-    //         } else {
-    //             Event::Release(i, j)
-    //         }))
-    //         .unwrap();
-    //     } else {
-    //         let [d] = data;
-    //         if d == REBOOT_SIGNAL {
-    //             bsp::hal::rom_data::reset_to_usb_boot(0, 0);
-    //         }
-    //     }
-    // }
+    fn i2c_peripheral_event_loop(i2c: &mut I2CPeripheral, scanned_keys: &mut ScannedKeys) {
+        while let Some(event) = i2c.next() {
+            match event {
+                I2CEvent::Start | I2CEvent::Restart => {}
+                I2CEvent::TransferRead => {
+                    let mut buf = [0; 16];
+                    for (e, b) in scanned_keys.drain(..).zip(buf.iter_mut()) {
+                        *b = e;
+                    }
+                    let mut sent = 0;
+                    while sent < buf.len() {
+                        sent += i2c.write(&buf[sent..]);
+                    }
+                }
+                I2CEvent::TransferWrite => {
+                    let mut command = 0;
+                    if i2c.read(core::slice::from_mut(&mut command)) == 1 {
+                        match command {
+                            READ_KEYS => {
+                                let mut buf = [0u8; 16];
+                                i2c.read(&mut buf);
+                            }
+                            SET_UI => {
+                                // TODO implement led state and oled statecommunication.
+                            }
+                            _ => {
+                                // No-op, we have no idea what this is.
+                            }
+                        }
+                    }
+                }
+                I2CEvent::Stop => {
+                    break;
+                }
+            }
+        }
+    }
+
+    #[task(binds = I2C0_IRQ, priority = 4, shared = [i2c0, scanned_events])]
+    fn rx(c: rx::Context) {
+        let i2c0 = c.shared.i2c0;
+        let scanned_events = c.shared.scanned_events;
+
+        (scanned_events, i2c0).lock(|s: &mut ScannedKeys, i2c: &mut Either<I2CPeripheral, _>| {
+            if let Either::Left(i2c) = i2c {
+                i2c_peripheral_event_loop(i2c, s);
+            }
+        })
+    }
 
     #[task(
         binds = TIMER_IRQ_1,

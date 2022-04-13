@@ -1,7 +1,6 @@
 use keyberon::action::{self, d, l};
 
 pub enum CustomAction {
-    BootReset,
     QwertyLed,
     ColemakLed,
     LayerSelectLed,
@@ -21,8 +20,6 @@ macro_rules! ma {
 fn ma(actions: &'static [Action]) -> Action {
     Action::MultipleActions(actions)
 }
-
-const UF2: Action = Action::Custom(CustomAction::BootReset);
 
 // Colemak DH
 const COLEMAK: Action = ma![CustomAction::ColemakLed, d(0)];
@@ -105,46 +102,46 @@ pub(crate) static LAYERS: keyberon::layout::Layers<CustomAction> = {
 
     keyberon::layout::layout! {
         { // (0) Colemak Dh
-            [t t Escape Q      W      F        P      B       J      L      U      Y          ;      -     t t]
-            [t t Tab   {A_SFT}{R_CTL}{S_ALT}  {T_GUI} G       M     {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote t t]
-            [t t t      Z      X      C        D      V       K      H      ,      .          /      t     t t]
-            [t t n      n      t      CapsLock P      Space   Enter  Delete t      ScrollLock n      n     t t]
+            [Escape Q      W      F        P      B     t t    t t J      L      U      Y          ;      -    ]
+            [Tab   {A_SFT}{R_CTL}{S_ALT}  {T_GUI} G     t t    t t M     {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote]
+            [t      Z      X      C        D      V     t t    t t K      H      ,      .          /      t    ]
+            [n      n      t      CapsLock P      Space t t    t t Enter  Delete t      ScrollLock n      n    ]
         }
         { // (1) Qwerty
-            [t t Escape Q      W      E        R      T         Y      U      I      O          P       -     t t]
-            [t t Tab   {A_SFT}{S_CTL}{D_ALT}  {F_GUI} G         H     {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote t t]
-            [t t t      Z      X      C        V      B         N      M      ,      .          /       t     t t]
-            [t t n      n      t      CapsLock BSpace Space     Enter  Delete t      ScrollLock n       n     t t]
+            [Escape Q      W      E        R      T     t t    t t Y      U      I      O          P       -    ]
+            [Tab   {A_SFT}{S_CTL}{D_ALT}  {F_GUI} G     t t    t t H     {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote]
+            [t      Z      X      C        V      B     t t    t t N      M      ,      .          /       t    ]
+            [n      n      t      CapsLock BSpace Space t t    t t Enter  Delete t      ScrollLock n       n    ]
         }
         { // (2) Left Layer Selector
-            [t t  n        n     n      n         n        n        n  n         n         n      n     n       t t]
-            [t t {QWERTY} {MMO} {NAV}  {NUM_PAD} {COLEMAK} n        n {COLEMAK} {NUM_PAD} {NAV}  {MMO} {QWERTY} t t]
-            [t t  n        n     n      n         n        n        n  n         n         n      n     n       t t]
-            [t t  n        n     n      n         n        n        n  n         n         n      n     n       t t]
+            [ n        n     n      n         n        n  t t    t t n  n         n         n      n     n      ]
+            [{QWERTY} {MMO} {NAV}  {NUM_PAD} {COLEMAK} n  t t    t t n {COLEMAK} {NUM_PAD} {NAV}  {MMO} {QWERTY}]
+            [ n        n     n      n         n        n  t t    t t n  n         n         n      n     n      ]
+            [ n        n     n      n         n        n  t t    t t n  n         n         n      n     n      ]
         }
         { // (3) Numpad
-            [t t t t      t       t    t      t         t       Kp7     Kp8     Kp9        KpMinus t t t]
-            [t t t LShift LCtrl   LAlt LGui   t         t       Kp4     Kp5     Kp6        KpPlus  t t t]
-            [t t t t      t       t    t      t         t       Kp1     Kp2     Kp3        KpEnter t t t]
-            [t t n n      NumLock t    BSpace Space     KpEnter Kp0     Kp0     KpDot      n       n t t]
+            [t t      t       t    t      t     t t    t t t       Kp7     Kp8     Kp9        KpMinus t]
+            [t LShift LCtrl   LAlt LGui   t     t t    t t t       Kp4     Kp5     Kp6        KpPlus  t]
+            [t t      t       t    t      t     t t    t t t       Kp1     Kp2     Kp3        KpEnter t]
+            [n n      NumLock t    BSpace Space t t    t t KpEnter Kp0     Kp0     KpDot      n       n]
         }
         { // (4) Nav
-            [t t t      Pause      PgUp  Up     PgDown t        t       t      t    t          t      t t t]
-            [t t t      PScreen    Left  Down   Right  t        t       RGui   RAlt RCtrl      RShift t t t]
-            [t t t      ScrollLock Home  Insert End    t        t       t      t    t          t      t t t]
-            [t t n      n          t     t      BSpace Space    Enter   Delete t    ScrollLock n      n t t]
+            [t      Pause      PgUp  Up     PgDown t     t t    t t t       t      t    t          t      t]
+            [t      PScreen    Left  Down   Right  t     t t    t t t       RGui   RAlt RCtrl      RShift t]
+            [t      ScrollLock Home  Insert End    t     t t    t t t       t      t    t          t      t]
+            [n      n          t     t      BSpace Space t t    t t Enter   Delete t    ScrollLock n      n]
         }
         { // (5) Symbol
-            [t t n     1       2       3       4       5       6      7       8       9       0       n t t]
-            [t t n    {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n       n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n t t]
-            [t t n     ~      '`'      |       Bslash  n       n     ')'     '}'     ']'     '"'      n t t]
-            [t t n     n       t       t       BSpace  Space   Enter  Delete  t       t       n       n t t]
+            [n     1       2       3       4       5     t t    t t 6      7       8       9       0       n]
+            [n    {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n     t t    t t n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
+            [n     ~      '`'      |       Bslash  n     t t    t t n     ')'     '}'     ']'     '"'      n]
+            [n     n       t       t       BSpace  Space t t    t t Enter  Delete  t       t       n       n]
         }
         { // (6) MMO
-            [t t N      1  2    3      4      5        n       Kp7   Kp8     Kp9        KpMinus n t t]
-            [t t Tab    I  A    W      D      =        n       Kp4   Kp5     Kp6        KpPlus  n t t]
-            [t t B      6  7    8      9      0        n       Kp1   Kp2     Kp3        KpEnter n t t]
-            [t t n      n  LAlt LCtrl LShift Space     Kp0     RCtrl RAlt    RShift     n       n t t]
+            [N      1  2    3      4      5    t t    t t n       Kp7   Kp8     Kp9        KpMinus n]
+            [Tab    I  A    W      D      =    t t    t t n       Kp4   Kp5     Kp6        KpPlus  n]
+            [B      6  7    8      9      0    t t    t t n       Kp1   Kp2     Kp3        KpEnter n]
+            [n      n  LAlt LCtrl LShift Space t t    t t Kp0     RCtrl RAlt    RShift     n       n]
         }
     }
 };
