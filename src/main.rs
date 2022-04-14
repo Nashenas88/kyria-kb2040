@@ -22,7 +22,6 @@ use bsp::hal::{Clock, Sio, I2C};
 use bsp::pac::{I2C1, PIO0};
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
-use core::num::Wrapping;
 use embedded_graphics::draw_target::DrawTargetExt;
 use embedded_graphics::image::Image;
 use embedded_graphics::pixelcolor::Rgb565;
@@ -115,7 +114,7 @@ mod app {
         >,
         i2c0: Either<I2CPeripheral, I2CController>,
         rotary: RotaryEncoder,
-        rotary_pos: Wrapping<u8>,
+        last_rotary: Option<Event>,
         display: Display,
         timer: bsp::hal::timer::Timer,
         alarm: bsp::hal::timer::Alarm0,
@@ -269,12 +268,11 @@ mod app {
 
         cortex_m::asm::delay(1000);
 
-        // Map the keys on the right side of the keyboard since the wiring will be reversed across
-        // the columns.
+        // The Kyria PCB counts columns starting from 0 closest to the MCU.
         let transform: fn(keyberon::layout::Event) -> keyberon::layout::Event = if is_right {
             |e| e.transform(|i: u8, j: u8| -> (u8, u8) { (i, 8 + j) })
         } else {
-            |e| e
+            |e| e.transform(|i: u8, j: u8| -> (u8, u8) { (i, 7 - j) })
         };
 
         // Build the matrix that will inform which specific combinations of row and col switches
@@ -378,7 +376,7 @@ mod app {
         (
             Shared {
                 rotary,
-                rotary_pos: Wrapping(0),
+                last_rotary: None,
                 usb_class,
                 usb_dev,
                 display,
@@ -408,17 +406,16 @@ mod app {
         let usb_d = c.shared.usb_dev;
         let usb_c = c.shared.usb_class;
         let is_right = c.shared.is_right;
+        if !is_right {
+            return;
+        }
         (usb_d, usb_c).lock(|d, c| {
-            if !is_right {
-                return;
-            }
-
             let _ = d.as_mut().unwrap().poll(&mut [c.as_mut().unwrap()]);
         });
     }
 
     /// Process events for the layout then generate and send the Keyboard HID Report.
-    #[task(priority = 2, capacity = 8, shared = [/*uart,*/ usb_dev, usb_class, layout, display, rotary])]
+    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout, display, rotary])]
     fn handle_event(mut c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
@@ -486,8 +483,7 @@ mod app {
             &transform,
             &is_right,
             rotary,
-            rotary_pos,
-            display,
+            last_rotary,
             &boot_button,
             scanned_events,
             i2c0
@@ -496,12 +492,12 @@ mod app {
     fn scan_timer_irq(c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
-        let rotary = c.shared.rotary;
-        let rotary_pos = c.shared.rotary_pos;
-        let mut display = c.shared.display;
+        let mut rotary = c.shared.rotary;
+        let mut last_rotary = c.shared.last_rotary;
         let boot_button = c.shared.boot_button;
         let mut scanned_events = c.shared.scanned_events;
         let mut i2c0 = c.shared.i2c0;
+        let is_right = *c.shared.is_right;
 
         if boot_button.is_low().unwrap() {
             bsp::hal::rom_data::reset_to_usb_boot(0, 0);
@@ -525,32 +521,12 @@ mod app {
             .events(keys_pressed)
             .map(c.shared.transform);
 
-        (rotary, rotary_pos, &mut display).lock(|r, p, d| {
-            let dir = match r.update().unwrap() {
-                Direction::Clockwise => {
-                    *p += 1;
-                    1
-                }
-                Direction::CounterClockwise => {
-                    *p -= 1;
-                    -1
-                }
-                Direction::None => 0,
-            };
-
-            if dir != 0 {
-                let mut buf = [0u8; 64];
-                let mut wrapper = Wrapper::new(&mut buf);
-                let _ = writeln!(wrapper, "E: {:+} => {:>4}", dir, p);
-                let written = wrapper.written();
-                drop(wrapper);
-                let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
-            }
-        });
+        let rotary_update = rotary.lock(|r| r.update().unwrap());
 
         // If we're on the right side of the keyboard, just send the events to the event handler
         // so they can be sent over USB.
-        if *c.shared.is_right {
+        if is_right {
+            // Try to read data from the other side first.
             let data = i2c0.lock(
                 |i2c: &mut Either<I2CPeripheral, I2CController>| -> Result<_, bsp::hal::i2c::Error> {
                     if let Either::Right(i2c) = i2c {
@@ -586,6 +562,24 @@ mod app {
             for event in deb_events {
                 handle_event::spawn(Some(event)).unwrap();
             }
+
+            if let Some(event) = last_rotary.lock(|l| l.take()) {
+                match event {
+                    Event::Press(x, y) => handle_event::spawn(Some(Event::Release(x, y))).unwrap(),
+                    Event::Release(..) => unreachable!(),
+                }
+            }
+
+            let rotary_event = match rotary_update {
+                Direction::Clockwise => Some(Event::Press(3, 14)),
+                Direction::CounterClockwise => Some(Event::Press(3, 12)),
+                Direction::None => None,
+            };
+            last_rotary.lock(|l| *l = rotary_event);
+            if rotary_event.is_some() {
+                handle_event::spawn(rotary_event).unwrap();
+            }
+
             handle_event::spawn(None).unwrap();
         } else {
             // coordinate and press/release is encoded in a single byte
@@ -600,6 +594,28 @@ mod app {
                 es[i] = Some(e);
                 last = i;
             }
+
+            if let Some(event) = last_rotary.lock(|l| l.take()) {
+                match event {
+                    Event::Press(x, y) => {
+                        es[last] = Some(Event::Release(x, y));
+                        last += 1;
+                    }
+                    Event::Release(..) => unreachable!(),
+                }
+            }
+
+            let rotary_event = match rotary_update {
+                Direction::Clockwise => Some(Event::Press(3, 3)),
+                Direction::CounterClockwise => Some(Event::Press(3, 1)),
+                Direction::None => None,
+            };
+            last_rotary.lock(|l| *l = rotary_event);
+            if rotary_event.is_some() {
+                es[last] = rotary_event;
+                last += 1;
+            }
+
             let stop_index = last + 1;
             let mut byte: u8;
             for (idx, e) in es.iter().enumerate().take(stop_index) {
@@ -677,7 +693,7 @@ mod app {
     #[task(
         binds = TIMER_IRQ_1,
         priority = 1,
-        shared = [ws, anim_controller, timer, alarm1],
+        shared = [ws, anim_controller, timer, alarm1, display],
     )]
     fn led_animations_irq(c: led_animations_irq::Context) {
         use smart_leds::SmartLedsWrite;

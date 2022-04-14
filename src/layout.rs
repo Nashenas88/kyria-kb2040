@@ -7,7 +7,6 @@ pub enum CustomAction {
     NumpadLed,
     NavLed,
     SymLed,
-    MmoLed,
 }
 
 pub(crate) type Action = action::Action<CustomAction>;
@@ -28,7 +27,6 @@ const LAYER: Action = ma![CustomAction::LayerSelectLed, l(2)];
 const NUM_PAD: Action = ma![CustomAction::NumpadLed, d(3)];
 const NAV: Action = ma![CustomAction::NavLed, d(4)];
 const SYM: Action = ma![CustomAction::SymLed, l(5)];
-const MMO: Action = ma![CustomAction::MmoLed, d(6)];
 
 #[cfg(feature = "home-mods")]
 pub(crate) static LAYERS: keyberon::layout::Layers<CustomAction> = {
@@ -102,46 +100,40 @@ pub(crate) static LAYERS: keyberon::layout::Layers<CustomAction> = {
 
     keyberon::layout::layout! {
         { // (0) Colemak Dh
-            [Escape Q      W      F        P      B     t t    t t J      L      U      Y          ;      -    ]
-            [Tab   {A_SFT}{R_CTL}{S_ALT}  {T_GUI} G     t t    t t M     {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote]
-            [t      Z      X      C        D      V     t t    t t K      H      ,      .          /      t    ]
-            [n      n      t      CapsLock P      Space t t    t t Enter  Delete t      ScrollLock n      n    ]
+            [Escape Q      W        F        P      B     n n    n n J      L      U      Y          ;      -    ]
+            [Tab   {A_SFT}{R_CTL}  {S_ALT}  {T_GUI} G     n n    n n M     {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote]
+            [t      Z      X        C        D      V     1 2    5 6 K      H      ,      .          /      t    ]
+            [n      Left   CapsLock Right    BSpace Space 3 4    7 8 Enter  Delete Up     ScrollLock Down   n    ]
         }
         { // (1) Qwerty
-            [Escape Q      W      E        R      T     t t    t t Y      U      I      O          P       -    ]
-            [Tab   {A_SFT}{S_CTL}{D_ALT}  {F_GUI} G     t t    t t H     {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote]
-            [t      Z      X      C        V      B     t t    t t N      M      ,      .          /       t    ]
-            [n      n      t      CapsLock BSpace Space t t    t t Enter  Delete t      ScrollLock n       n    ]
+            [Escape Q      W        E        R      T     n n    n n Y      U      I      O          P       -    ]
+            [Tab   {A_SFT}{S_CTL}  {D_ALT}  {F_GUI} G     n n    n n H     {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote]
+            [t      Z      X        C        V      B     1 2    5 6 N      M      ,      .          /       t    ]
+            [n      Left   CapsLock Right    BSpace Space 3 4    7 8 Enter  Delete Up     ScrollLock Down    n    ]
         }
         { // (2) Left Layer Selector
-            [ n        n     n      n         n        n  t t    t t n  n         n         n      n     n      ]
-            [{QWERTY} {MMO} {NAV}  {NUM_PAD} {COLEMAK} n  t t    t t n {COLEMAK} {NUM_PAD} {NAV}  {MMO} {QWERTY}]
-            [ n        n     n      n         n        n  t t    t t n  n         n         n      n     n      ]
-            [ n        n     n      n         n        n  t t    t t n  n         n         n      n     n      ]
+            [ n  n       n    n        n        n  n n    n n n  n        n        n    n       n]
+            [ n {QWERTY}{NAV}{NUM_PAD}{COLEMAK} n  n n    n n n {COLEMAK}{NUM_PAD}{NAV}{QWERTY} n]
+            [ n  n       n    n        n        n  1 2    5 6 n  n        n        n    n       n]
+            [ n  n       n    n        n        n  3 4    7 8 n  n        n        n    n       n]
         }
         { // (3) Numpad
             [t t      t       t    t      t     t t    t t t       Kp7     Kp8     Kp9        KpMinus t]
             [t LShift LCtrl   LAlt LGui   t     t t    t t t       Kp4     Kp5     Kp6        KpPlus  t]
-            [t t      t       t    t      t     t t    t t t       Kp1     Kp2     Kp3        KpEnter t]
-            [n n      NumLock t    BSpace Space t t    t t KpEnter Kp0     Kp0     KpDot      n       n]
+            [t t      t       t    t      t     1 2    5 6 t       Kp1     Kp2     Kp3        KpEnter t]
+            [n t      NumLock t    BSpace Space 3 4    7 8 KpEnter Kp0     n       KpDot      n       n]
         }
         { // (4) Nav
             [t      Pause      PgUp  Up     PgDown t     t t    t t t       t      t    t          t      t]
             [t      PScreen    Left  Down   Right  t     t t    t t t       RGui   RAlt RCtrl      RShift t]
-            [t      ScrollLock Home  Insert End    t     t t    t t t       t      t    t          t      t]
-            [n      n          t     t      BSpace Space t t    t t Enter   Delete t    ScrollLock n      n]
+            [t      ScrollLock Home  Insert End    t     1 2    5 6 t       t      t    t          t      t]
+            [n      t          t     t      BSpace Space 3 4    7 8 Enter   Delete t    ScrollLock t      n]
         }
         { // (5) Symbol
             [n     1       2       3       4       5     t t    t t 6      7       8       9       0       n]
             [n    {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n     t t    t t n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
             [n     ~      '`'      |       Bslash  n     t t    t t n     ')'     '}'     ']'     '"'      n]
-            [n     n       t       t       BSpace  Space t t    t t Enter  Delete  t       t       n       n]
-        }
-        { // (6) MMO
-            [N      1  2    3      4      5    t t    t t n       Kp7   Kp8     Kp9        KpMinus n]
-            [Tab    I  A    W      D      =    t t    t t n       Kp4   Kp5     Kp6        KpPlus  n]
-            [B      6  7    8      9      0    t t    t t n       Kp1   Kp2     Kp3        KpEnter n]
-            [n      n  LAlt LCtrl LShift Space t t    t t Kp0     RCtrl RAlt    RShift     n       n]
+            [n     t       t       t       BSpace  Space t t    t t Enter  Delete  t       t       t       n]
         }
     }
 };
