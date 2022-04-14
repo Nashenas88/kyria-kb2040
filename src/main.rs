@@ -477,7 +477,21 @@ mod app {
     #[task(
         binds = TIMER_IRQ_0,
         priority = 1,
-        shared = [matrix, debouncer, watchdog, timer, alarm, &transform, &is_right, rotary, rotary_pos, display, &boot_button, scanned_events, i2c0],
+        shared = [
+            matrix,
+            debouncer,
+            watchdog,
+            timer,
+            alarm,
+            &transform,
+            &is_right,
+            rotary,
+            rotary_pos,
+            display,
+            &boot_button,
+            scanned_events,
+            i2c0
+        ],
     )]
     fn scan_timer_irq(c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
@@ -537,33 +551,36 @@ mod app {
         // If we're on the right side of the keyboard, just send the events to the event handler
         // so they can be sent over USB.
         if *c.shared.is_right {
-            let data = i2c0.lock(|i2c| {
-                if let Either::Right(i2c) = i2c {
-                    let mut buf = [0u8; 16];
-                    i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)
-                        .unwrap();
-                    buf
-                } else {
-                    unreachable!()
+            let data = i2c0.lock(
+                |i2c: &mut Either<I2CPeripheral, I2CController>| -> Result<_, bsp::hal::i2c::Error> {
+                    if let Either::Right(i2c) = i2c {
+                        let mut buf = [0u8; 16];
+                        i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
+                        Ok(buf)
+                    } else {
+                        unreachable!()
+                    }
+                },
+            );
+
+            if let Ok(data) = data {
+                for d in data {
+                    // Zeros indicate no key event.
+                    if d == 0 {
+                        break;
+                    }
+
+                    let i = (d & ROW_BIT_MASK) >> ROW_SHIFT;
+                    let j = (d & COL_BIT_MASK) >> COL_SHIFT;
+                    let is_pressed = (d & PRESSED_BIT_MASK) > 0;
+
+                    handle_event::spawn(Some(if is_pressed {
+                        Event::Press(i, j)
+                    } else {
+                        Event::Release(i, j)
+                    }))
+                    .unwrap();
                 }
-            });
-
-            for d in data {
-                // Zeros indicate no key event.
-                if d == 0 {
-                    break;
-                }
-
-                let i = (d & ROW_BIT_MASK) >> ROW_SHIFT;
-                let j = (d & COL_BIT_MASK) >> COL_SHIFT;
-                let is_pressed = (d & PRESSED_BIT_MASK) > 0;
-
-                handle_event::spawn(Some(if is_pressed {
-                    Event::Press(i, j)
-                } else {
-                    Event::Release(i, j)
-                }))
-                .unwrap();
             }
 
             for event in deb_events {
@@ -571,22 +588,6 @@ mod app {
             }
             handle_event::spawn(None).unwrap();
         } else {
-            // for event in deb_events {
-            //     buf.fill_with(|| 0);
-            //     let mut wrapper = Wrapper::new(&mut buf);
-            //     let (typ, x, y) = match event {
-            //         Event::Press(x, y) => ("P", x, y),
-            //         Event::Release(x, y) => ("R", x, y),
-            //     };
-            //     let _ = writeln!(wrapper, "C{}: ({},{})", typ, x, y);
-            //     let written = wrapper.written();
-            //     drop(wrapper);
-            //     display.lock(|d| {
-            //         d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) })
-            //             .unwrap()
-            //     });
-            // }
-
             // coordinate and press/release is encoded in a single byte
             // the first 6 bits are the coordinate and therefore cannot go past 63
             // The last bit is to signify if it is the last byte to be sent, but
@@ -621,6 +622,14 @@ mod app {
                     });
                 }
             }
+
+            (i2c0, scanned_events).lock(|i2c, s| {
+                if let Either::Left(i2c) = i2c {
+                    i2c_peripheral_event_loop(i2c, s);
+                } else {
+                    unreachable!()
+                }
+            });
         }
     }
 
@@ -663,18 +672,6 @@ mod app {
                 }
             }
         }
-    }
-
-    #[task(binds = I2C0_IRQ, priority = 4, shared = [i2c0, scanned_events])]
-    fn rx(c: rx::Context) {
-        let i2c0 = c.shared.i2c0;
-        let scanned_events = c.shared.scanned_events;
-
-        (scanned_events, i2c0).lock(|s: &mut ScannedKeys, i2c: &mut Either<I2CPeripheral, _>| {
-            if let Either::Left(i2c) = i2c {
-                i2c_peripheral_event_loop(i2c, s);
-            }
-        })
     }
 
     #[task(
