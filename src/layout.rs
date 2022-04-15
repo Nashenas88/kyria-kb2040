@@ -43,14 +43,14 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
 
     fn left_mod(stacked_iter: StackedIter) -> Option<WaitingAction> {
         match stacked_iter.map(|s| s.event()).find(|e| e.is_press()) {
-            Some(Event::Press(_, j)) if j < 6 => Some(WaitingAction::Tap),
+            Some(Event::Press(_, j)) if j < (NCOLS as u8 / 2) => Some(WaitingAction::Tap),
             _ => None,
         }
     }
 
     fn right_mod(stacked_iter: StackedIter) -> Option<WaitingAction> {
         match stacked_iter.map(|s| s.event()).find(|e| e.is_press()) {
-            Some(Event::Press(_, j)) if j > 5 => Some(WaitingAction::Tap),
+            Some(Event::Press(_, j)) if j >= (NCOLS as u8 / 2) => Some(WaitingAction::Tap),
             _ => None,
         }
     }
