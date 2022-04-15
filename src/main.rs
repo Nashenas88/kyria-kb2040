@@ -81,6 +81,7 @@ pub enum Either<T, U> {
 }
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
+const CORE1_LOOP_US: u32 = 1_000;
 fn core1_task() -> ! {
     let mut pac = unsafe { bsp::pac::Peripherals::steal() };
     let core = unsafe { bsp::pac::CorePeripherals::steal() };
@@ -111,20 +112,43 @@ fn core1_task() -> ! {
     let mut ws = Ws2812::new(rgb.into_mode(), &mut pio, sm0, peripheral_freq);
     let mut anim_controller = AnimationController::new();
 
+    let mut counter = 0;
+    let mut custom_action = None;
     loop {
         use smart_leds::SmartLedsWrite;
-        delay.delay_us(LED_ANIM_TIME_US);
-
-        // // Immediately clear the interrupt and schedule the next scan alarm.
-        // a.clear_interrupt(t);
-        // let _ = a.schedule(LED_ANIM_TIME_US.microseconds());
-
-        // let mut ws = c.shared.ws;
-        if anim_controller.tick() {
-            anim_controller.set_state(AnimState::Colemak);
+        delay.delay_us(CORE1_LOOP_US);
+        counter += 1;
+        if sio.fifo.is_read_ready() {
+            custom_action = sio.fifo.read().map(|i| CustomAction::from(i as u8));
         }
-        let leds = anim_controller.leds();
-        let _ = SmartLedsWrite::write(&mut ws, brightness(gamma(leds.into_iter()), 32));
+        if counter == LED_ANIM_TIME_US / CORE1_LOOP_US {
+            counter = 0;
+
+            if let Some(anim_state) =
+                custom_action
+                    .take()
+                    .and_then(|custom_action| match custom_action {
+                        CustomAction::QwertyLed => Some(AnimState::Qwerty),
+                        CustomAction::ColemakLed => Some(AnimState::Colemak),
+                        CustomAction::LayerSelectLed => Some(AnimState::LayerSelect),
+                        CustomAction::SymLed => Some(AnimState::Sym),
+                        _ => None,
+                    })
+            {
+                anim_controller.set_state(anim_state);
+            }
+
+            // // Immediately clear the interrupt and schedule the next scan alarm.
+            // a.clear_interrupt(t);
+            // let _ = a.schedule(LED_ANIM_TIME_US.microseconds());
+
+            // let mut ws = c.shared.ws;
+            if anim_controller.tick() {
+                anim_controller.set_state(AnimState::Colemak);
+            }
+            let leds = anim_controller.leds();
+            let _ = SmartLedsWrite::write(&mut ws, brightness(gamma(leds.into_iter()), 32));
+        }
     }
 }
 
@@ -132,6 +156,8 @@ fn core1_task() -> ! {
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
+    use bsp::hal::sio::SioFifo;
+
     use super::*;
 
     /// The number of times a switch needs to be in the same state for the
@@ -158,6 +184,7 @@ mod app {
                 keyberon::keyboard::Keyboard<UsualLeds>,
             >,
         >,
+        sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
         rotary: RotaryEncoder,
         last_rotary: Option<Event>,
@@ -417,6 +444,7 @@ mod app {
 
         (
             Shared {
+                sio_fifo: sio.fifo,
                 rotary,
                 last_rotary: None,
                 usb_class,
@@ -454,12 +482,19 @@ mod app {
     }
 
     /// Process events for the layout then generate and send the Keyboard HID Report.
-    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout, display, rotary])]
-    fn handle_event(mut c: handle_event::Context, event: Option<keyberon::layout::Event>) {
+    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, i2c0, layout, display, rotary, sio_fifo])]
+    fn handle_event(c: handle_event::Context, event: Option<keyberon::layout::Event>) {
+        let mut layout = c.shared.layout;
+        let mut display = c.shared.display;
+        let mut usb_class = c.shared.usb_class;
+        let mut usb_dev = c.shared.usb_dev;
+        let i2c0 = c.shared.i2c0;
+        let sio_fifo = c.shared.sio_fifo;
+
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
         if let Some(e) = event {
-            c.shared.display.lock(|d| {
+            display.lock(|d| {
                 let mut buf = [0u8; 64];
                 let (typ, x, y) = match e {
                     Event::Press(x, y) => ('P', x, y),
@@ -471,21 +506,26 @@ mod app {
                 drop(wrapper);
                 let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
             });
-            c.shared.layout.lock(|l| l.event(e));
+            layout.lock(|l| l.event(e));
             return;
         }
 
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
-        let report: key_code::KbHidReport = c.shared.layout.lock(|l| {
-            if let keyberon::layout::CustomEvent::Press(_custom_action) = l.tick() {
+        let report: key_code::KbHidReport = (layout, i2c0, sio_fifo).lock(|l, i2c, sf| {
+            if let keyberon::layout::CustomEvent::Press(&custom_action) = l.tick() {
+                let serialized = custom_action.into();
+                if let Either::Right(i2c) = i2c {
+                    let _ = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]);
+                }
+                sf.write_blocking(serialized as u32);
                 // update led state, communicate to other half
             }
             l.keycodes().collect()
         });
 
         // Set the keyboard report on the usb class.
-        let was_report_modified = c.shared.usb_class.lock(|k| {
+        let was_report_modified = usb_class.lock(|k| {
             k.as_mut()
                 // This function is never called on the left half. usb_class is always populated on
                 // the right half.
@@ -498,16 +538,12 @@ mod app {
         }
 
         // If the device is not configured yet, we need to bail out.
-        if c.shared.usb_dev.lock(|d| d.as_ref().unwrap().state()) != UsbDeviceState::Configured {
+        if usb_dev.lock(|d| d.as_ref().unwrap().state()) != UsbDeviceState::Configured {
             return;
         }
 
         // Watchdog will prevent the keyboard from getting stuck in this loop.
-        while let Ok(0) = c
-            .shared
-            .usb_class
-            .lock(|k| k.as_mut().unwrap().write(report.as_bytes()))
-        {}
+        while let Ok(0) = usb_class.lock(|k| k.as_mut().unwrap().write(report.as_bytes())) {}
     }
 
     #[task(
@@ -525,7 +561,8 @@ mod app {
             last_rotary,
             &boot_button,
             scanned_events,
-            i2c0
+            i2c0,
+            sio_fifo
         ],
     )]
     fn scan_timer_irq(c: scan_timer_irq::Context) {
@@ -537,6 +574,7 @@ mod app {
         let mut scanned_events = c.shared.scanned_events;
         let mut i2c0 = c.shared.i2c0;
         let is_right = *c.shared.is_right;
+        let sio_fifo = c.shared.sio_fifo;
 
         if boot_button.is_low().unwrap() {
             bsp::hal::rom_data::reset_to_usb_boot(0, 0);
@@ -678,9 +716,9 @@ mod app {
                 }
             }
 
-            (i2c0, scanned_events).lock(|i2c, s| {
+            (i2c0, scanned_events, sio_fifo).lock(|i2c, s, sf| {
                 if let Either::Left(i2c) = i2c {
-                    i2c_peripheral_event_loop(i2c, s);
+                    i2c_peripheral_event_loop(i2c, s, sf);
                 } else {
                     unreachable!()
                 }
@@ -691,7 +729,11 @@ mod app {
     const READ_KEYS: u8 = 0x80;
     const SET_UI: u8 = 0x81;
 
-    fn i2c_peripheral_event_loop(i2c: &mut I2CPeripheral, scanned_keys: &mut ScannedKeys) {
+    fn i2c_peripheral_event_loop(
+        i2c: &mut I2CPeripheral,
+        scanned_keys: &mut ScannedKeys,
+        sio_fifo: &mut SioFifo,
+    ) {
         while let Some(event) = i2c.next() {
             match event {
                 I2CEvent::Start | I2CEvent::Restart => {}
@@ -714,7 +756,9 @@ mod app {
                                 i2c.read(&mut buf);
                             }
                             SET_UI => {
-                                // TODO implement led state and oled statecommunication.
+                                let mut layer = 0;
+                                i2c.read(core::slice::from_mut(&mut layer));
+                                sio_fifo.write_blocking(layer as u32)
                             }
                             _ => {
                                 // No-op, we have no idea what this is.

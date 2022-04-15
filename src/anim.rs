@@ -7,7 +7,6 @@ pub enum AnimState {
     Qwerty,
     LayerSelect,
     Sym,
-    Mmo,
 }
 
 const NUM_LEDS: usize = 10;
@@ -21,17 +20,6 @@ impl Default for AnimState {
 impl AnimState {
     fn new() -> AnimState {
         AnimState::Boot
-    }
-
-    pub fn from_layer(layer: u8) -> Result<AnimState, ()> {
-        Ok(match layer {
-            0 => AnimState::Colemak,
-            1 => AnimState::Qwerty,
-            2 => AnimState::LayerSelect,
-            5 => AnimState::Sym,
-            6 => AnimState::Mmo,
-            _ => return Err(()),
-        })
     }
 }
 
@@ -56,7 +44,6 @@ impl AnimationController {
             AnimState::Qwerty => self.qwerty_leds(),
             AnimState::LayerSelect => self.layer_leds(),
             AnimState::Sym => self.sym_leds(),
-            AnimState::Mmo => self.mmo_leds(),
         }
     }
 
@@ -87,7 +74,6 @@ impl AnimationController {
             AnimState::Qwerty => 1000,
             AnimState::LayerSelect => 1000,
             AnimState::Sym => 1000,
-            AnimState::Mmo => 1000,
         }
     }
 
@@ -113,6 +99,14 @@ impl AnimationController {
 
     fn red(c: u8) -> RGB8 {
         RGB { r: c, g: 0, b: 0 }
+    }
+
+    fn green(c: u8) -> RGB8 {
+        RGB { r: 0, g: c, b: 0 }
+    }
+
+    fn blue(c: u8) -> RGB8 {
+        RGB { r: 0, g: 0, b: c }
     }
 
     fn boot_leds(&self) -> [RGB8; NUM_LEDS] {
@@ -171,7 +165,19 @@ impl AnimationController {
     }
 
     fn qwerty_leds(&self) -> [RGB8; NUM_LEDS] {
-        [RGB8::default(); NUM_LEDS]
+        let pos = EASE_OUT[(self.anim_count / 3) as usize];
+        [
+            Self::blue(255 - Self::for_slow_pos(0, pos)),
+            Self::blue(255 - Self::for_slow_pos(1, pos)),
+            Self::blue(255 - Self::for_slow_pos(2, pos)),
+            Self::blue(255 - Self::for_slow_pos(3, pos)),
+            Self::blue(255 - Self::for_slow_pos(4, pos)),
+            Self::blue(255 - Self::for_slow_pos(5, pos)),
+            Self::blue(255 - Self::for_slow_pos(6, pos)),
+            Self::blue(255 - Self::for_slow_pos(7, pos)),
+            Self::blue(255 - Self::for_slow_pos(8, pos)),
+            Self::blue(255 - Self::for_slow_pos(9, pos)),
+        ]
     }
 
     fn layer_leds(&self) -> [RGB8; NUM_LEDS] {
@@ -179,11 +185,19 @@ impl AnimationController {
     }
 
     fn sym_leds(&self) -> [RGB8; NUM_LEDS] {
-        [RGB8::default(); NUM_LEDS]
-    }
-
-    fn mmo_leds(&self) -> [RGB8; NUM_LEDS] {
-        [RGB8::default(); NUM_LEDS]
+        let pos = EASE_OUT[(self.anim_count / 3) as usize];
+        [
+            Self::green(255 - Self::for_slow_pos(0, pos)),
+            Self::green(255 - Self::for_slow_pos(1, pos)),
+            Self::green(255 - Self::for_slow_pos(2, pos)),
+            Self::green(255 - Self::for_slow_pos(3, pos)),
+            Self::green(255 - Self::for_slow_pos(4, pos)),
+            Self::green(255 - Self::for_slow_pos(5, pos)),
+            Self::green(255 - Self::for_slow_pos(6, pos)),
+            Self::green(255 - Self::for_slow_pos(7, pos)),
+            Self::green(255 - Self::for_slow_pos(8, pos)),
+            Self::green(255 - Self::for_slow_pos(9, pos)),
+        ]
     }
 }
 

@@ -1,6 +1,7 @@
 use keyberon::action::{self, d, l};
 
 #[allow(clippy::enum_variant_names)]
+#[derive(Copy, Clone)]
 pub enum CustomAction {
     QwertyLed,
     ColemakLed,
@@ -8,6 +9,33 @@ pub enum CustomAction {
     NumpadLed,
     NavLed,
     SymLed,
+}
+
+impl From<u8> for CustomAction {
+    fn from(a: u8) -> Self {
+        match a {
+            0 => CustomAction::QwertyLed,
+            1 => CustomAction::ColemakLed,
+            2 => CustomAction::LayerSelectLed,
+            3 => CustomAction::NumpadLed,
+            4 => CustomAction::NavLed,
+            5 => CustomAction::SymLed,
+            _ => panic!("unexpected number {a}"),
+        }
+    }
+}
+
+impl From<CustomAction> for u8 {
+    fn from(action: CustomAction) -> Self {
+        match action {
+            CustomAction::QwertyLed => 0,
+            CustomAction::ColemakLed => 1,
+            CustomAction::LayerSelectLed => 2,
+            CustomAction::NumpadLed => 3,
+            CustomAction::NavLed => 4,
+            CustomAction::SymLed => 5,
+        }
+    }
 }
 
 pub(crate) type Action = action::Action<CustomAction>;
