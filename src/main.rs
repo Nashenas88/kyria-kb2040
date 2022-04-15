@@ -11,15 +11,16 @@ use crate::ws2812::Ws2812;
 use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
 use bsp::hal::clocks::init_clocks_and_plls;
-use bsp::hal::gpio::bank0::{Gpio0, Gpio1, Gpio11, Gpio12, Gpio2, Gpio3};
+use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio2, Gpio3};
 use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PullUpInput};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
-use bsp::hal::pio::{PIOExt, SM0};
+use bsp::hal::multicore::{Multicore, Stack};
+use bsp::hal::pio::PIOExt;
 use bsp::hal::timer::Timer;
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
 use bsp::hal::{Clock, Sio, I2C};
-use bsp::pac::{I2C1, PIO0};
+use bsp::pac::I2C1;
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
 use embedded_graphics::draw_target::DrawTargetExt;
@@ -30,7 +31,8 @@ use embedded_graphics::Drawable;
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 use embedded_hal::prelude::*;
 use embedded_time::duration::Extensions as _;
-use embedded_time::rate::Extensions as _;
+use embedded_time::fixed_point::FixedPoint;
+use embedded_time::rate::{Extensions as _, Hertz};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
@@ -68,9 +70,62 @@ type ScannedKeys = ArrayDeque<[u8; 16], behavior::Wrapping>;
 
 const I2C_PERIPHERAL_ADDR: u8 = 0x56;
 
+/// The amount of time between each scan of the matrix for switch presses.
+/// This is always the time from the *start* of the previous scan.
+const SCAN_TIME_US: u32 = 1000;
+const LED_ANIM_TIME_US: u32 = 3_000;
+
 pub enum Either<T, U> {
     Left(T),
     Right(U),
+}
+
+static mut CORE1_STACK: Stack<4096> = Stack::new();
+fn core1_task() -> ! {
+    let mut pac = unsafe { bsp::pac::Peripherals::steal() };
+    let core = unsafe { bsp::pac::CorePeripherals::steal() };
+    let mut sio = Sio::new(pac.SIO);
+    let pins = bsp::hal::gpio::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
+
+    // let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS);
+    // The alarm used to trigger the led animations scan.
+    // let mut alarm1 = timer.alarm_1().unwrap();
+    // let _ = alarm1.schedule(LED_ANIM_TIME_US.microseconds());
+    // alarm1.enable_interrupt(&mut timer);
+
+    // The first thing core0 sends us is the system bus frequency.
+    // The systick is based on this frequency, so we need that to
+    // be accurate when sleeping via cortex_m::delay::Delay
+    let sys_freq = sio.fifo.read_blocking();
+    let peripheral_freq = sio.fifo.read_blocking();
+    let mut delay = cortex_m::delay::Delay::new(core.SYST, sys_freq);
+
+    let rgb = pins.gpio0; // pins.tx;
+    let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
+    let peripheral_freq = Hertz::new(peripheral_freq);
+    let mut ws = Ws2812::new(rgb.into_mode(), &mut pio, sm0, peripheral_freq);
+    let mut anim_controller = AnimationController::new();
+
+    loop {
+        use smart_leds::SmartLedsWrite;
+        delay.delay_us(LED_ANIM_TIME_US);
+
+        // // Immediately clear the interrupt and schedule the next scan alarm.
+        // a.clear_interrupt(t);
+        // let _ = a.schedule(LED_ANIM_TIME_US.microseconds());
+
+        // let mut ws = c.shared.ws;
+        if anim_controller.tick() {
+            anim_controller.set_state(AnimState::Colemak);
+        }
+        let leds = anim_controller.leds();
+        let _ = SmartLedsWrite::write(&mut ws, brightness(gamma(leds.into_iter()), 32));
+    }
 }
 
 // Rtic entry point. Uses the kb2040's Peripheral Access API (pac), and uses the
@@ -91,11 +146,6 @@ mod app {
     const COL_SHIFT: u8 = 0;
 
     const NCOL_PINS: usize = 8;
-
-    /// The amount of time between each scan of the matrix for switch presses.
-    /// This is always the time from the *start* of the previous scan.
-    const SCAN_TIME_US: u32 = 1000;
-    const LED_ANIM_TIME_US: u32 = 3_000;
     static mut USB_BUS: Option<usb_device::bus::UsbBusAllocator<bsp::hal::usb::UsbBus>> = None;
 
     #[shared]
@@ -114,10 +164,8 @@ mod app {
         display: Display,
         timer: bsp::hal::timer::Timer,
         alarm: bsp::hal::timer::Alarm0,
-        alarm1: bsp::hal::timer::Alarm1,
         #[lock_free]
         watchdog: bsp::hal::watchdog::Watchdog,
-        ws: ws2812::Ws2812<PIO0, SM0, Gpio0>,
         #[lock_free]
         matrix: matrix::Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }>,
         layout: Layout<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>,
@@ -125,8 +173,6 @@ mod app {
         debouncer: Debouncer<PressedKeys<{ NCOL_PINS }, { NROWS }>>,
         transform: fn(keyberon::layout::Event) -> keyberon::layout::Event,
         is_right: bool,
-        #[lock_free]
-        anim_controller: AnimationController,
         boot_button: Pin<Gpio11, PullUpInput>,
         scanned_events: ScannedKeys,
     }
@@ -136,7 +182,7 @@ mod app {
 
     /// Setup for the keyboard.
     #[init]
-    fn init(c: init::Context) -> (Shared, Local, init::Monotonics) {
+    fn init(mut c: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut watchdog = Watchdog::new(c.device.WATCHDOG);
         let mut resets = c.device.RESETS;
 
@@ -152,7 +198,17 @@ mod app {
         .ok()
         .unwrap();
 
-        let sio = Sio::new(c.device.SIO);
+        let mut sio = Sio::new(c.device.SIO);
+        let mut mc = Multicore::new(&mut c.device.PSM, &mut c.device.PPB, &mut sio);
+        let cores = mc.cores();
+        let core1 = &mut cores[1];
+        let _test = core1.spawn(core1_task, unsafe { &mut CORE1_STACK.mem });
+        // Let core1 know how fast the system clock is running
+        let sys_freq = clocks.system_clock.freq().integer();
+        let peripheral_freq = clocks.peripheral_clock.freq().integer();
+        sio.fifo.write_blocking(sys_freq);
+        sio.fifo.write_blocking(peripheral_freq);
+
         let pins = bsp::Pins::new(
             c.device.IO_BANK0,
             c.device.PADS_BANK0,
@@ -252,15 +308,8 @@ mod app {
         let mut display = display.into_terminal_mode();
         display.init().unwrap();
 
-        let rgb = pins.tx;
+        let _rgb = pins.tx;
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
-        let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
-        let ws = Ws2812::new(
-            rgb.into_mode(),
-            &mut pio,
-            sm0,
-            clocks.peripheral_clock.freq(),
-        );
 
         cortex_m::asm::delay(1000);
 
@@ -335,11 +384,6 @@ mod app {
         let _ = alarm.schedule(SCAN_TIME_US.microseconds());
         alarm.enable_interrupt(&mut timer);
 
-        // The alarm used to trigger the led animations scan.
-        let mut alarm1 = timer.alarm_1().unwrap();
-        let _ = alarm1.schedule(LED_ANIM_TIME_US.microseconds());
-        alarm1.enable_interrupt(&mut timer);
-
         // The bus that is used to manage the device and class below.
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -381,15 +425,12 @@ mod app {
                 i2c0,
                 timer,
                 alarm,
-                alarm1,
                 watchdog,
                 matrix,
-                ws,
                 layout,
                 debouncer,
                 transform,
                 is_right,
-                anim_controller: AnimationController::new(),
                 boot_button: pins.d11.into_pull_up_input(),
                 scanned_events: ArrayDeque::new(),
             },
@@ -686,33 +727,5 @@ mod app {
                 }
             }
         }
-    }
-
-    #[task(
-        binds = TIMER_IRQ_1,
-        priority = 1,
-        shared = [ws, anim_controller, timer, alarm1, display],
-    )]
-    fn led_animations_irq(c: led_animations_irq::Context) {
-        use smart_leds::SmartLedsWrite;
-
-        let timer = c.shared.timer;
-        let alarm1 = c.shared.alarm1;
-
-        // Immediately clear the interrupt and schedule the next scan alarm.
-        (timer, alarm1).lock(|t, a| {
-            a.clear_interrupt(t);
-            let _ = a.schedule(LED_ANIM_TIME_US.microseconds());
-        });
-
-        let mut ws = c.shared.ws;
-        let anim_controller = c.shared.anim_controller;
-        if anim_controller.tick() {
-            anim_controller.set_state(AnimState::Colemak);
-        }
-        let leds = anim_controller.leds();
-        ws.lock(|w| {
-            let _ = SmartLedsWrite::write(w, brightness(gamma(leds.into_iter()), 32));
-        });
     }
 }
