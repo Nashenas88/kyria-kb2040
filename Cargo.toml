@@ -41,11 +41,6 @@ tinybmp = "0.3.1"
 rotary-encoder-hal = { version = "0.5.0", features = ["table-decoder"] }
 arraydeque = { version = "0.4.5", default-features = false }
 
-[features]
-default = [ "home-mods" ]
-left-kb = []
-home-mods = []
-
 # cargo build/run
 [profile.dev]
 codegen-units = 1

@@ -5,7 +5,7 @@
 
 use crate::anim::{AnimState, AnimationController};
 use crate::fmt::Wrapper;
-use crate::layout::CustomAction;
+use crate::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use crate::leds::UsualLeds;
 use crate::ws2812::Ws2812;
 use adafruit_kb2040 as bsp;
@@ -90,11 +90,7 @@ mod app {
     const COL_BIT_MASK: u8 = 0b0000_0111;
     const COL_SHIFT: u8 = 0;
 
-    /// The number of columns on the keyboard.
-    const NCOLS: usize = 8;
-
-    /// The number of rows on the keyboard.
-    const NROWS: usize = 4;
+    const NCOL_PINS: usize = 8;
 
     /// The amount of time between each scan of the matrix for switch presses.
     /// This is always the time from the *start* of the previous scan.
@@ -123,10 +119,10 @@ mod app {
         watchdog: bsp::hal::watchdog::Watchdog,
         ws: ws2812::Ws2812<PIO0, SM0, Gpio0>,
         #[lock_free]
-        matrix: matrix::Matrix<DynPin, DynPin, NCOLS, NROWS>,
-        layout: Layout<CustomAction>,
+        matrix: matrix::Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }>,
+        layout: Layout<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>,
         #[lock_free]
-        debouncer: Debouncer<PressedKeys<NCOLS, NROWS>>,
+        debouncer: Debouncer<PressedKeys<{ NCOL_PINS }, { NROWS }>>,
         transform: fn(keyberon::layout::Event) -> keyberon::layout::Event,
         is_right: bool,
         #[lock_free]
@@ -277,7 +273,7 @@ mod app {
 
         // Build the matrix that will inform which specific combinations of row and col switches
         // are being pressed.
-        let matrix: matrix::Matrix<DynPin, DynPin, NCOLS, NROWS> =
+        let matrix: matrix::Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }> =
             cortex_m::interrupt::free(move |_cs| {
                 if is_right {
                     matrix::Matrix::new(
@@ -322,15 +318,17 @@ mod app {
             .unwrap();
 
         // Load the defined layout which is used later to map the matrix to specific keycodes.
-        let layout = Layout::<CustomAction>::new(layout::LAYERS);
+        let layout =
+            Layout::<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>::new(&layout::LAYERS);
         // The debouncer prevents very tiny bounces from being registered as multiple switch
         // presses.
-        let debouncer: keyberon::debounce::Debouncer<keyberon::matrix::PressedKeys<NCOLS, NROWS>> =
-            Debouncer::new(
-                PressedKeys::default(),
-                PressedKeys::default(),
-                DEBOUNCER_MIN_STATE_COUNT,
-            );
+        let debouncer: keyberon::debounce::Debouncer<
+            keyberon::matrix::PressedKeys<NCOL_PINS, NROWS>,
+        > = Debouncer::new(
+            PressedKeys::default(),
+            PressedKeys::default(),
+            DEBOUNCER_MIN_STATE_COUNT,
+        );
 
         // The alarm used to trigger the matrix scan.
         let mut alarm = timer.alarm_0().unwrap();

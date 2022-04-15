@@ -12,6 +12,12 @@ pub enum AnimState {
 
 const NUM_LEDS: usize = 10;
 
+impl Default for AnimState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AnimState {
     fn new() -> AnimState {
         AnimState::Boot
@@ -29,6 +35,7 @@ impl AnimState {
     }
 }
 
+#[derive(Default)]
 pub struct AnimationController {
     state: AnimState,
     anim_count: u16,
