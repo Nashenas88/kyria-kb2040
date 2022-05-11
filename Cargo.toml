@@ -18,7 +18,7 @@ panic-halt = "0.2.0"
 
 usb-device= "0.2.8"
 usbd-serial = "0.1.1"
-usbd-hid = "0.5.2"
+usbd-hid = "0.6.0"
 
 # Led support
 smart-leds = "0.3.0"

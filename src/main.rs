@@ -12,6 +12,7 @@ use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
 use bsp::hal::clocks::init_clocks_and_plls;
 use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio13, Gpio2, Gpio3};
+use bsp::hal::gpio::Interrupt;
 use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PullUpInput};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
@@ -39,6 +40,7 @@ use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
 use panic_halt as _;
+use pimoroni_trackball::{I2CInterface as TrackballInterface, TrackballBuilder};
 use pimoroni_trackball_driver as pimoroni_trackball;
 use rotary_encoder_hal::{Direction, Rotary};
 use smart_leds::{brightness, gamma};
@@ -50,6 +52,8 @@ use ssd1306::Ssd1306;
 use tinybmp::Bmp;
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::UsbDeviceState;
+use usbd_hid::descriptor::{MouseReport, SerializedDescriptor};
+use usbd_hid::hid_class::HIDClass;
 
 type Trackball = pimoroni_trackball::Trackball<
     I2C<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>,
@@ -162,9 +166,6 @@ fn core1_task() -> ! {
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
-    use bsp::hal::gpio::Interrupt;
-    use pimoroni_trackball::{I2CInterface, TrackballBuilder};
-
     use super::*;
 
     /// The number of times a switch needs to be in the same state for the
@@ -184,13 +185,14 @@ mod app {
     #[shared]
     struct Shared {
         usb_dev: Option<usb_device::device::UsbDevice<'static, bsp::hal::usb::UsbBus>>,
-        usb_class: Option<
+        keyboard_class: Option<
             keyberon::hid::HidClass<
                 'static,
                 bsp::hal::usb::UsbBus,
                 keyberon::keyboard::Keyboard<UsualLeds>,
             >,
         >,
+        mouse_class: Option<usbd_hid::hid_class::HIDClass<'static, bsp::hal::usb::UsbBus>>,
         sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
         rotary: RotaryEncoder,
@@ -268,6 +270,7 @@ mod app {
             (maybe_row_3, maybe_col_7, is_right)
         };
 
+        // The rotaries are wired differently on the left and right keyboards.
         let rotary = if is_right {
             Rotary::new(
                 pins.a3.into_pull_up_input().into(),
@@ -294,7 +297,7 @@ mod app {
                     &mut resets,
                     clocks.peripheral_clock.freq(),
                 );
-                let i2c = I2CInterface::new(i2c);
+                let i2c = TrackballInterface::new(i2c);
                 let mut trackball = TrackballBuilder::<_, Pin<_, _>>::new(i2c)
                     .interrupt_pin(pins.scl.into_pull_up_input())
                     .build();
@@ -444,8 +447,16 @@ mod app {
         }
 
         // The class which specifies this device supports HID Keyboard reports.
-        let usb_class =
+        let keyboard_class =
             is_right.then(|| keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, UsualLeds));
+        // The class which specifies this device supports HID Mouse reports.
+        let mouse_class = is_right.then(|| {
+            HIDClass::new(
+                unsafe { USB_BUS.as_ref().unwrap() },
+                MouseReport::desc(),
+                60,
+            )
+        });
         // The device which represents the device to the system as being a "Keyberon"
         // keyboard.
         let usb_dev = is_right.then(|| keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() }));
@@ -464,7 +475,8 @@ mod app {
                 sio_fifo: sio.fifo,
                 rotary,
                 last_rotary: None,
-                usb_class,
+                keyboard_class,
+                mouse_class,
                 usb_dev,
                 display,
                 i2c0,
@@ -485,25 +497,29 @@ mod app {
     }
 
     /// Usb interrupt handler. Runs every time the host requests new data.
-    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [usb_dev, usb_class, &is_right])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [usb_dev, keyboard_class, mouse_class, &is_right])]
     fn usb_rx(c: usb_rx::Context) {
         let usb_d = c.shared.usb_dev;
-        let usb_c = c.shared.usb_class;
+        let keyboard_class = c.shared.keyboard_class;
+        let mouse_class = c.shared.mouse_class;
         let is_right = c.shared.is_right;
         if !is_right {
             return;
         }
-        (usb_d, usb_c).lock(|d, c| {
-            let _ = d.as_mut().unwrap().poll(&mut [c.as_mut().unwrap()]);
+        (usb_d, keyboard_class, mouse_class).lock(|d, k, m| {
+            let _ = d
+                .as_mut()
+                .unwrap()
+                .poll(&mut [k.as_mut().unwrap(), m.as_mut().unwrap()]);
         });
     }
 
     /// Process events for the layout then generate and send the Keyboard HID Report.
-    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, i2c0, layout, display, rotary, sio_fifo])]
+    #[task(priority = 2, capacity = 8, shared = [usb_dev, keyboard_class, i2c0, layout, display, rotary, sio_fifo])]
     fn handle_event(c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         let mut layout = c.shared.layout;
         let mut display = c.shared.display;
-        let mut usb_class = c.shared.usb_class;
+        let mut keyboard_class = c.shared.keyboard_class;
         let mut usb_dev = c.shared.usb_dev;
         let i2c0 = c.shared.i2c0;
         let sio_fifo = c.shared.sio_fifo;
@@ -545,9 +561,9 @@ mod app {
         });
 
         // Set the keyboard report on the usb class.
-        let was_report_modified = usb_class.lock(|k| {
+        let was_report_modified = keyboard_class.lock(|k| {
             k.as_mut()
-                // This function is never called on the left half. usb_class is always populated on
+                // This function is never called on the left half. keyboard_class is always populated on
                 // the right half.
                 .unwrap()
                 .device_mut()
@@ -563,15 +579,15 @@ mod app {
         }
 
         // Watchdog will prevent the keyboard from getting stuck in this loop.
-        while let Ok(0) = usb_class.lock(|k| k.as_mut().unwrap().write(report.as_bytes())) {}
+        while let Ok(0) = keyboard_class.lock(|k| k.as_mut().unwrap().write(report.as_bytes())) {}
     }
 
     #[task(binds = IO_IRQ_BANK0, priority = 1, shared = [i2c0])]
     fn trackball_irq(c: trackball_irq::Context) {
         let mut i2c0 = c.shared.i2c0;
-        let _data: pimoroni_trackball::Data = i2c0.lock(|i2c0| match i2c0 {
+        let data = i2c0.lock(|i2c0| match i2c0 {
             Either::Right(trackball) => {
-                let data: pimoroni_trackball::Data = trackball.read().unwrap();
+                let data = trackball.read().unwrap();
                 trackball.interrupt().clear_interrupt(Interrupt::EdgeLow);
                 data
             }
@@ -579,6 +595,36 @@ mod app {
                 unreachable!()
             }
         });
+
+        let _ = handle_mouse_event::spawn(data);
+    }
+
+    #[task(priority = 2, shared = [usb_dev, mouse_class])]
+    fn handle_mouse_event(c: handle_mouse_event::Context, event: pimoroni_trackball::Data) {
+        let mut usb_dev = c.shared.usb_dev;
+        let mut mouse_class = c.shared.mouse_class;
+
+        let report = MouseReport {
+            x: (event.left as i8 - event.right as i8) * 10,
+            y: (event.up as i8 - event.down as i8) * 10,
+            buttons: if event.switch_pressed { 1 } else { 0 },
+            pan: 0,
+            wheel: 0,
+        };
+
+        // If the device is not configured yet, we need to bail out.
+        if usb_dev.lock(|d| d.as_ref().unwrap().state()) != UsbDeviceState::Configured {
+            return;
+        }
+
+        // Watchdog will prevent the keyboard from getting stuck in this loop.
+        while let Ok(0) = mouse_class.lock(|m: &mut Option<HIDClass<_>>| {
+            m.as_mut()
+                // This function is never called on the left half. keyboard_class is always populated on
+                // the right half.
+                .unwrap()
+                .push_input(&report)
+        }) {}
     }
 
     #[task(
