@@ -130,40 +130,40 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
 
     keyberon::layout::layout! {
         { // (0) Colemak Dh
-            [Escape Q      W        F        P      B      n    n          n      n    J      L      U      Y          ;      -    ]
-            [Tab   {A_SFT}{R_CTL}  {S_ALT}  {T_GUI} G      n    n          n      n    M     {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote]
-            [t      Z      X        C        D      V      1    2          5      6    K      H      ,      .          /      t    ]
-            [n      Left   CapsLock Right    BSpace Space {SYM}{LAYER}    {LAYER}{SYM} Enter  Delete Up     ScrollLock Down   n    ]
+            [Escape Q      W        F        P      B      n      n          n      n     J       L      U      Y          ;      -    ]
+            [Tab   {A_SFT}{R_CTL}  {S_ALT}  {T_GUI} G      n      n          n      n     M      {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote]
+            [t      Z      X        C        D      V      1      2          5      6     K       H      ,      .          /      t    ]
+            [n      Left   CapsLock Right   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} Up     ScrollLock Down   n    ]
         }
         { // (1) Qwerty
-            [Escape Q      W        E        R      T      n    n          n      n    Y      U      I      O          P       -    ]
-            [Tab   {A_SFT}{S_CTL}  {D_ALT}  {F_GUI} G      n    n          n      n    H     {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote]
-            [t      Z      X        C        V      B      1    2          5      6    N      M      ,      .          /       t    ]
-            [n      Left   CapsLock Right    BSpace Space {SYM}{LAYER}    {LAYER}{SYM} Enter  Delete Up     ScrollLock Down    n    ]
+            [Escape Q      W        E        R      T      n      n          n      n     Y       U      I      O          P       -    ]
+            [Tab   {A_SFT}{S_CTL}  {D_ALT}  {F_GUI} G      n      n          n      n     H      {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote]
+            [t      Z      X        C        V      B      1      2          5      6     N       M      ,      .          /       t    ]
+            [n      Left   CapsLock Right   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}   Up     ScrollLock Down    n    ]
         }
         { // (2) Left Layer Selector
-            [ t  t       t    t        t        t   n    n          n      n    t  t        t        t    t       t]
-            [ t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t   n    n          n      n    t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
-            [ t  t       t    t        t        t   1    2          5      6    t  t        t        t    t       t]
-            [ n  t       t    t        t        t  {SYM}{LAYER}    {LAYER}{SYM} t  t        t        t    t       n]
+            [ t  t       t    t        t        t n  n          n      n  t  t        t        t    t       t]
+            [ t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t n  n          n      n  t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
+            [ t  t       t    t        t        t 1  2          5      6  t  t        t        t    t       t]
+            [ n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
         }
         { // (3) Numpad
-            [t t      t       t    t      t      t    t          t      t    t       Kp7     Kp8     Kp9        KpMinus t]
-            [t LShift LCtrl   LAlt LGui   t      t    t          t      t    t       Kp4     Kp5     Kp6        KpPlus  t]
-            [t t      t       t    t      t      1    2          5      6    t       Kp1     Kp2     Kp3        KpEnter t]
-            [n t      NumLock t    BSpace Space {SYM}{LAYER}    {LAYER}{SYM} KpEnter Kp0     n       KpDot      n       n]
+            [t t      t       t    t    t      t      t          t      t       t    Kp7  Kp8 Kp9   KpMinus t]
+            [t LShift LCtrl   LAlt LGui t      t      t          t      t       t    Kp4  Kp5 Kp6   KpPlus  t]
+            [t t      t       t    t    t      1      2          5      6       t    Kp1  Kp2 Kp3   KpEnter t]
+            [n t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0 {SYM} n   KpDot n       n]
         }
         { // (4) Nav
-            [t      Pause      PgUp  Up     PgDown t      t    t          t      t    t       t      t    t          t      t]
-            [t      PScreen    Left  Down   Right  t      t    t          t      t    t       RGui   RAlt RCtrl      RShift t]
-            [t      ScrollLock Home  Insert End    t      1    2          5      6    t       t      t    t          t      t]
-            [n      t          t     t      BSpace Space {SYM}{LAYER}    {LAYER}{SYM} Enter   Delete t    ScrollLock t      n]
+            [t      Pause      PgUp  Up     PgDown t      t      t          t      t     t       t    t    t          t      t]
+            [t      PScreen    Left  Down   Right  t      t      t          t      t     t       RGui RAlt RCtrl      RShift t]
+            [t      ScrollLock Home  Insert End    t      1      2          5      6     t       t    t    t          t      t]
+            [n      t          t     t     {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} t    ScrollLock t      n]
         }
         { // (5) Symbol
-            [n     1       2       3       4       5     t t    t t 6      7       8       9       0       n]
-            [n    {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n     t t    t t n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
-            [n     ~      '`'      |       Bslash  n     t t    t t n     ')'     '}'     ']'     '"'      n]
-            [n     t       t       t       BSpace  Space t t    t t Enter  Delete  t       t       t       n]
+            [n     1       2       3       4       5      t     t    t t      6      7       8       9       0       n]
+            [n    {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n      t     t    t t      n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
+            [n     ~      '`'      |       Bslash  n      t     t    t t      n     ')'     '}'     ']'     '"'      n]
+            [n     t       t       t       t       BSpace Space t    t Enter  Delete t       t       t       t       n]
         }
     }
 };
