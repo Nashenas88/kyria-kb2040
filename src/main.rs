@@ -11,16 +11,17 @@ use crate::ws2812::Ws2812;
 use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
 use bsp::hal::clocks::init_clocks_and_plls;
-use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio2, Gpio3};
+use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio13, Gpio2, Gpio3};
 use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PullUpInput};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
 use bsp::hal::pio::PIOExt;
+use bsp::hal::sio::SioFifo;
 use bsp::hal::timer::Timer;
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
 use bsp::hal::{Clock, Sio, I2C};
-use bsp::pac::I2C1;
+use bsp::pac::{I2C0, I2C1};
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
 use embedded_graphics::draw_target::DrawTargetExt;
@@ -38,6 +39,7 @@ use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
 use panic_halt as _;
+use pimoroni_trackball_driver as pimoroni_trackball;
 use rotary_encoder_hal::{Direction, Rotary};
 use smart_leds::{brightness, gamma};
 use ssd1306::mode::{DisplayConfig, TerminalMode};
@@ -49,12 +51,16 @@ use tinybmp::Bmp;
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::UsbDeviceState;
 
+type Trackball = pimoroni_trackball::Trackball<
+    I2C<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>,
+    Pin<Gpio13, PullUpInput>,
+>;
+
 mod anim;
 mod fmt;
 mod layout;
 mod leds;
 mod matrix;
-mod pimorino_trackball;
 mod ws2812;
 
 type Display = Ssd1306<
@@ -64,8 +70,8 @@ type Display = Ssd1306<
 >;
 type RotaryEncoder = Rotary<DynPin, DynPin>;
 type I2CPeripheral =
-    I2CPeripheralEventIterator<bsp::pac::I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
-type I2CController = I2C<bsp::pac::I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+    I2CPeripheralEventIterator<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type I2CController = Trackball;
 type ScannedKeys = ArrayDeque<[u8; 16], behavior::Wrapping>;
 
 const I2C_PERIPHERAL_ADDR: u8 = 0x56;
@@ -156,7 +162,8 @@ fn core1_task() -> ! {
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
-    use bsp::hal::sio::SioFifo;
+    use bsp::hal::gpio::Interrupt;
+    use pimoroni_trackball::{I2CInterface, TrackballBuilder};
 
     use super::*;
 
@@ -278,14 +285,24 @@ mod app {
 
         // Right functions as the I2C controller for communication between the halves and for USB.
         let i2c0 = if is_right {
-            Either::Right(bsp::hal::I2C::i2c0(
-                c.device.I2C0,
-                sda0,
-                scl0,
-                100.kHz(),
-                &mut resets,
-                clocks.peripheral_clock.freq(),
-            ))
+            Either::Right({
+                let i2c = bsp::hal::I2C::i2c0(
+                    c.device.I2C0,
+                    sda0,
+                    scl0,
+                    100.kHz(),
+                    &mut resets,
+                    clocks.peripheral_clock.freq(),
+                );
+                let i2c = I2CInterface::new(i2c);
+                let mut trackball = TrackballBuilder::<_, Pin<_, _>>::new(i2c)
+                    .interrupt_pin(pins.scl.into_pull_up_input())
+                    .build();
+                let _ = trackball.init(|interrupt_pin| {
+                    interrupt_pin.set_interrupt_enabled(Interrupt::EdgeLow, true)
+                });
+                trackball
+            })
         } else {
             Either::Left(bsp::hal::I2C::new_peripheral_event_iterator(
                 c.device.I2C0,
@@ -515,8 +532,11 @@ mod app {
         let report: key_code::KbHidReport = (layout, i2c0, sio_fifo).lock(|l, i2c, sf| {
             if let keyberon::layout::CustomEvent::Press(&custom_action) = l.tick() {
                 let serialized = custom_action.into();
-                if let Either::Right(i2c) = i2c {
-                    let _ = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]);
+                if let Either::Right(trackball) = i2c {
+                    let trackball: &mut Trackball = trackball;
+                    let _ = trackball
+                        .i2c()
+                        .write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]);
                 }
                 sf.write_blocking(serialized as u32);
                 // update led state, communicate to other half
@@ -544,6 +564,21 @@ mod app {
 
         // Watchdog will prevent the keyboard from getting stuck in this loop.
         while let Ok(0) = usb_class.lock(|k| k.as_mut().unwrap().write(report.as_bytes())) {}
+    }
+
+    #[task(binds = IO_IRQ_BANK0, priority = 1, shared = [i2c0])]
+    fn trackball_irq(c: trackball_irq::Context) {
+        let mut i2c0 = c.shared.i2c0;
+        let _data: pimoroni_trackball::Data = i2c0.lock(|i2c0| match i2c0 {
+            Either::Right(trackball) => {
+                let data: pimoroni_trackball::Data = trackball.read().unwrap();
+                trackball.interrupt().clear_interrupt(Interrupt::EdgeLow);
+                data
+            }
+            Either::Left(_) => {
+                unreachable!()
+            }
+        });
     }
 
     #[task(
@@ -606,9 +641,9 @@ mod app {
             // Try to read data from the other side first.
             let data = i2c0.lock(
                 |i2c: &mut Either<I2CPeripheral, I2CController>| -> Result<_, bsp::hal::i2c::Error> {
-                    if let Either::Right(i2c) = i2c {
+                    if let Either::Right(trackball) = i2c {
                         let mut buf = [0u8; 16];
-                        i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
+                        trackball.i2c().write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
                         Ok(buf)
                     } else {
                         unreachable!()

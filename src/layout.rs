@@ -89,9 +89,7 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
                 timeout: 250,
                 hold: $hold,
                 tap: $tap,
-                config: ::keyberon::action::HoldTapConfig::Custom(
-                    ::keyberon::action::CustomHandler($mod_func),
-                ),
+                config: ::keyberon::action::HoldTapConfig::Custom($mod_func),
                 tap_hold_interval: 0,
             }
         };
