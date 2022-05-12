@@ -7,6 +7,7 @@ use crate::anim::{AnimState, AnimationController};
 use crate::fmt::Wrapper;
 use crate::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use crate::leds::UsualLeds;
+use crate::mouse::MouseReportExt;
 use crate::ws2812::Ws2812;
 use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
@@ -40,7 +41,7 @@ use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
 use panic_halt as _;
-use pimoroni_trackball::{I2CInterface as TrackballInterface, TrackballBuilder};
+use pimoroni_trackball::{I2CInterface as TrackballInterface, TrackballBuilder, TrackballData};
 use pimoroni_trackball_driver as pimoroni_trackball;
 use rotary_encoder_hal::{Direction, Rotary};
 use smart_leds::{brightness, gamma};
@@ -65,6 +66,7 @@ mod fmt;
 mod layout;
 mod leds;
 mod matrix;
+mod mouse;
 mod ws2812;
 
 type Display = Ssd1306<
@@ -193,6 +195,7 @@ mod app {
             >,
         >,
         mouse_class: Option<usbd_hid::hid_class::HIDClass<'static, bsp::hal::usb::UsbBus>>,
+        mouse_data: TrackballData,
         sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
         rotary: RotaryEncoder,
@@ -287,7 +290,7 @@ mod app {
         let scl0 = pins.rx.into_mode::<bsp::hal::gpio::FunctionI2C>();
 
         // Right functions as the I2C controller for communication between the halves and for USB.
-        let i2c0 = if is_right {
+        let mut i2c0 = if is_right {
             Either::Right({
                 let i2c = bsp::hal::I2C::i2c0(
                     c.device.I2C0,
@@ -463,6 +466,9 @@ mod app {
 
         if is_right {
             display.write_str("Right\n").unwrap();
+            if let Either::Right(trackball) = &mut i2c0 {
+                let _ = trackball.set_red(128);
+            }
         } else {
             display.write_str("Left\n").unwrap();
         }
@@ -477,6 +483,14 @@ mod app {
                 last_rotary: None,
                 keyboard_class,
                 mouse_class,
+                mouse_data: TrackballData {
+                    up: 0,
+                    down: 0,
+                    left: 0,
+                    right: 0,
+                    switch_changed: false,
+                    switch_pressed: false,
+                },
                 usb_dev,
                 display,
                 i2c0,
@@ -527,16 +541,16 @@ mod app {
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
         if let Some(e) = event {
+            let mut buf = [0u8; 64];
+            let (typ, x, y) = match e {
+                Event::Press(x, y) => ('P', x, y),
+                Event::Release(x, y) => ('R', x, y),
+            };
+            let mut wrapper = Wrapper::new(&mut buf);
+            let _ = writeln!(wrapper, "{}: ({},{})", typ, x, y);
+            let written = wrapper.written();
+            drop(wrapper);
             display.lock(|d| {
-                let mut buf = [0u8; 64];
-                let (typ, x, y) = match e {
-                    Event::Press(x, y) => ('P', x, y),
-                    Event::Release(x, y) => ('R', x, y),
-                };
-                let mut wrapper = Wrapper::new(&mut buf);
-                let _ = writeln!(wrapper, "{}: ({},{})", typ, x, y);
-                let written = wrapper.written();
-                drop(wrapper);
                 let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
             });
             layout.lock(|l| l.event(e));
@@ -582,9 +596,11 @@ mod app {
         while let Ok(0) = keyboard_class.lock(|k| k.as_mut().unwrap().write(report.as_bytes())) {}
     }
 
-    #[task(binds = IO_IRQ_BANK0, priority = 1, shared = [i2c0])]
+    #[task(binds = IO_IRQ_BANK0, priority = 2, shared = [i2c0, mouse_data, display])]
     fn trackball_irq(c: trackball_irq::Context) {
         let mut i2c0 = c.shared.i2c0;
+        let mut mouse_data = c.shared.mouse_data;
+        let mut display = c.shared.display;
         let data = i2c0.lock(|i2c0| match i2c0 {
             Either::Right(trackball) => {
                 let data = trackball.read().unwrap();
@@ -596,17 +612,50 @@ mod app {
             }
         });
 
-        let _ = handle_mouse_event::spawn(data);
+        display.lock(|d| {
+            let mut buf = [0u8; 64];
+            let mut wrapper = Wrapper::new(&mut buf);
+            let _ = writeln!(
+                wrapper,
+                "{}{}{}{}{}{}",
+                data.up,
+                data.down,
+                data.left,
+                data.right,
+                data.switch_changed as u8,
+                data.switch_pressed as u8
+            );
+            let written = wrapper.written();
+            drop(wrapper);
+            let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
+        });
+        let should_spawn = mouse_data.lock(|m| {
+            if m.is_dead_and_same(&data) {
+                false
+            } else {
+                *m = data;
+                true
+            }
+        });
+        if should_spawn {
+            let _ = handle_mouse_event::spawn(data);
+        }
     }
 
     #[task(priority = 2, shared = [usb_dev, mouse_class])]
-    fn handle_mouse_event(c: handle_mouse_event::Context, event: pimoroni_trackball::Data) {
+    fn handle_mouse_event(
+        c: handle_mouse_event::Context,
+        event: pimoroni_trackball::TrackballData,
+    ) {
         let mut usb_dev = c.shared.usb_dev;
         let mut mouse_class = c.shared.mouse_class;
 
+        let x = (event.left as i8 - event.right as i8) * 3;
+        let y = (event.up as i8 - event.down as i8) * 3;
+
         let report = MouseReport {
-            x: (event.left as i8 - event.right as i8) * 10,
-            y: (event.up as i8 - event.down as i8) * 10,
+            x: x.saturating_mul(x).saturating_mul(x.signum()),
+            y: y.saturating_mul(y).saturating_mul(y.signum()),
             buttons: if event.switch_pressed { 1 } else { 0 },
             pan: 0,
             wheel: 0,

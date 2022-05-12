@@ -33,8 +33,8 @@ adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "c180e7867b94
 
 # This revision supports hold tap, easier to use.
 # keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "58ac73cfcd09659bf31ee405ff9f5e23b0edc527" }
-keyberon = { path = "../keyberon" }
-pimoroni-trackball-driver = "0.1.0"
+keyberon = { git = "https://github.com/nashenas88/keyberon", rev = "e0d6c165260e2d2f6d028c9d7b928e2b23183aaa" }
+pimoroni-trackball-driver = "0.1.1"
 
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7.1"
