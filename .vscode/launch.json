@@ -1,0 +1,47 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'kyria-kb2040'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=kyria-kb2040",
+                    "--package=kyria-kb2040",
+                    "--no-default-features",
+                    "--features=pico"
+                ],
+                "filter": {
+                    "name": "kyria-kb2040",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        } //,
+        // {
+        //     "type": "lldb",
+        //     "request": "launch",
+        //     "name": "Debug unit tests in executable 'kyria-kb2040'",
+        //     "cargo": {
+        //         "args": [
+        //             "test",
+        //             "--no-run",
+        //             "--bin=kyria-kb2040",
+        //             "--package=kyria-kb2040"
+        //         ],
+        //         "filter": {
+        //             "name": "kyria-kb2040",
+        //             "kind": "bin"
+        //         }
+        //     },
+        //     "args": [],
+        //     "cwd": "${workspaceFolder}"
+        // }
+    ]
+}

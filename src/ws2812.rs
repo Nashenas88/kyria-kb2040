@@ -5,9 +5,8 @@
 
 #![allow(dead_code)]
 
-use adafruit_kb2040 as bsp;
-use bsp::hal::gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode};
-use bsp::hal::pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO};
+use crate::bsp::hal::gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode};
+use crate::bsp::hal::pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO};
 use embedded_time::fixed_point::FixedPoint;
 use smart_leds::{SmartLedsWrite, RGB8};
 
@@ -68,20 +67,20 @@ where
         // Configure the PIO state machine.
         let div = clock_freq.integer() as f32 / (FREQ as f32 * CYCLES_PER_BIT as f32);
 
-        let (mut sm, _, tx) = bsp::hal::pio::PIOBuilder::from_program(installed)
+        let (mut sm, _, tx) = crate::bsp::hal::pio::PIOBuilder::from_program(installed)
             // only use TX FIFO
-            .buffers(bsp::hal::pio::Buffers::OnlyTx)
+            .buffers(crate::bsp::hal::pio::Buffers::OnlyTx)
             // Pin configuration
             .side_set_pin_base(I::DYN.num)
             // OSR config
-            .out_shift_direction(bsp::hal::pio::ShiftDirection::Left)
+            .out_shift_direction(crate::bsp::hal::pio::ShiftDirection::Left)
             .autopull(true)
             .pull_threshold(24)
             .clock_divisor(div)
             .build(sm);
 
         // Prepare pin's direction.
-        sm.set_pindirs([(I::DYN.num, bsp::hal::pio::PinDir::Output)]);
+        sm.set_pindirs([(I::DYN.num, crate::bsp::hal::pio::PinDir::Output)]);
 
         sm.start();
 
