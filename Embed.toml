@@ -44,7 +44,7 @@ connect_under_reset = false
 
 [default.rtt]
 # Whether or not an RTTUI should be opened after flashing.
-enabled = false
+enabled = true
 # How the target handles RTT outputs that won't fit in the buffer.  This can be
 # overridden per-channel. If left unset, the firmware will determine the default
 # for each RTT up channel.
@@ -77,6 +77,6 @@ log_path = "./logs"
 
 [default.gdb]
 # Whether or not a GDB server should be opened after flashing.
-enabled = false
+enabled = true
 # The connection string in host:port format wher the GDB server will open a socket.
 gdb_connection_string = "127.0.0.1:1337"

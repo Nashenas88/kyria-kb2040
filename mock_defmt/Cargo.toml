@@ -1,0 +1,9 @@
+[package]
+authors = ["Paul Daniel Faria"]
+edition = "2021"
+readme = "README.md"
+name = "mock_defmt"
+version = "0.1.0"
+resolver = "2"
+
+[dependencies]
