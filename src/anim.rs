@@ -81,7 +81,7 @@ impl AnimationController {
     fn for_pos(idx: u8, pos: u8) -> u8 {
         if idx == pos {
             255
-        } else if idx == pos + 1 || idx == pos - 1 {
+        } else if idx < core::u8::MAX && idx == pos + 1 || (pos > 0 && idx == pos - 1) {
             127
         } else {
             0
@@ -89,9 +89,12 @@ impl AnimationController {
     }
 
     fn for_slow_pos(idx: u8, pos: u16) -> u8 {
-        if idx as u16 * 100 == pos {
+        let bumped_idx = (idx as u16).saturating_mul(100);
+        if bumped_idx == pos {
             255
-        } else if idx as u16 * 100 == pos + 1 || idx as u16 * 100 == pos - 1 {
+        } else if bumped_idx < core::u16::MAX && bumped_idx == pos + 1
+            || (pos > 0 && bumped_idx == pos - 1)
+        {
             127
         } else {
             0

@@ -5,43 +5,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'kyria-kb2040'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=kyria-kb2040",
-                    "--package=kyria-kb2040",
-                    "--no-default-features",
-                    "--features=pico"
-                ],
-                "filter": {
-                    "name": "kyria-kb2040",
-                    "kind": "bin"
-                }
+            "type": "probe-rs-debug",
+            "request": "attach",
+            "name": "probe-rs Debug",
+            "cwd": "${worskpaceDirectory}",
+            "connectUnderReset": true,
+            "chip": "RP2040",
+            "flashingConfig": {
+                "flashingEnabled": false,
+                "resetAfterFlashing": true,
+                "haltAfterReset": true,
             },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        } //,
-        // {
-        //     "type": "lldb",
-        //     "request": "launch",
-        //     "name": "Debug unit tests in executable 'kyria-kb2040'",
-        //     "cargo": {
-        //         "args": [
-        //             "test",
-        //             "--no-run",
-        //             "--bin=kyria-kb2040",
-        //             "--package=kyria-kb2040"
-        //         ],
-        //         "filter": {
-        //             "name": "kyria-kb2040",
-        //             "kind": "bin"
-        //         }
-        //     },
-        //     "args": [],
-        //     "cwd": "${workspaceFolder}"
-        // }
+            "consoleLogLevel": "Debug",
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "programBinary": "./target/thumbv6m-none-eabi/debug/kyria-kb2040"
+                }
+            ],
+            "preLaunchTask": "rust: cargo build for pico"
+        }
     ]
 }

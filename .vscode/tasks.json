@@ -1,0 +1,44 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "build",
+			"args": [
+				"--no-default-features",
+				"--features=pico"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo build for pico"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"args": [
+				"--no-default-features",
+				"--features=kb2040"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo build for kb2040"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"args": [
+				"--no-default-features",
+				"--features=sf2040"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo build for sf2040"
+		},
+	]
+}

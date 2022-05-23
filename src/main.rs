@@ -19,15 +19,19 @@ use bsp::hal::gpio::bank0::Gpio13;
 use bsp::hal::gpio::bank0::Gpio22;
 #[cfg(feature = "kb2040")]
 use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio2, Gpio25, Gpio3};
+#[cfg(feature = "sf2040")]
+use bsp::hal::gpio::bank0::{Gpio1, Gpio16, Gpio2, Gpio25, Gpio3};
 #[cfg(feature = "pico")]
 use bsp::hal::gpio::bank0::{Gpio18, Gpio19, Gpio20, Gpio21, Gpio25, Gpio28};
 #[cfg(feature = "trackball")]
 use bsp::hal::gpio::Interrupt;
-use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PullUpInput, PushPullOutput};
+#[cfg(any(feature = "kb2040", feature = "pico"))]
+use bsp::hal::gpio::PullUpInput;
+use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PushPullOutput};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
 use bsp::hal::sio::SioFifo;
-use bsp::hal::timer::Timer;
+use bsp::hal::timer::{Alarm, Timer};
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
 use bsp::hal::{Clock, Sio, I2C};
@@ -41,6 +45,7 @@ use embedded_graphics::image::Image;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::Drawable;
+#[cfg(any(feature = "kb2040", feature = "pico"))]
 use embedded_hal::digital::v2::InputPin;
 #[cfg(feature = "pico")]
 use embedded_hal::digital::v2::OutputPin;
@@ -52,19 +57,21 @@ use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
-#[cfg(feature = "kb2040")]
+#[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use mock_defmt as defmt;
-#[cfg(feature = "kb2040")]
+#[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use panic_halt as _;
 #[cfg(feature = "pico")]
 use panic_probe as _;
-#[cfg(featire = "trackball")]
+#[cfg(feature = "trackball")]
 use pimoroni_trackball::{I2CInterface as TrackballInterface, TrackballBuilder, TrackballData};
-#[cfg(featire = "trackball")]
+#[cfg(feature = "trackball")]
 use pimoroni_trackball_driver as pimoroni_trackball;
 use rotary_encoder_hal::{Direction, Rotary};
 #[cfg(feature = "pico")]
 use rp_pico as bsp;
+#[cfg(feature = "sf2040")]
+use sparkfun_pro_micro_rp2040 as bsp;
 use ssd1306::mode::{DisplayConfig, TerminalMode};
 use ssd1306::prelude::I2CInterface;
 use ssd1306::rotation::DisplayRotation;
@@ -91,6 +98,8 @@ mod ws2812;
 
 #[cfg(feature = "kb2040")]
 type I2C0Controller = I2C<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+#[cfg(feature = "sf2040")]
+type I2C0Controller = I2C<I2C0, (Pin<Gpio16, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
 #[cfg(feature = "pico")]
 type I2C0Controller = I2C<I2C0, (Pin<Gpio20, FunctionI2C>, Pin<Gpio21, FunctionI2C>)>;
 
@@ -100,6 +109,12 @@ type Trackball = pimoroni_trackball::Trackball<I2C0Controller, Pin<Gpio13, PullU
 type Trackball = pimoroni_trackball::Trackball<I2C0Controller, Pin<Gpio22, PullUpInput>>;
 
 #[cfg(feature = "kb2040")]
+type Display = Ssd1306<
+    I2CInterface<I2C<I2C1, (Pin<Gpio2, FunctionI2C>, Pin<Gpio3, FunctionI2C>)>>,
+    DisplaySize128x64,
+    TerminalMode,
+>;
+#[cfg(feature = "sf2040")]
 type Display = Ssd1306<
     I2CInterface<I2C<I2C1, (Pin<Gpio2, FunctionI2C>, Pin<Gpio3, FunctionI2C>)>>,
     DisplaySize128x64,
@@ -115,6 +130,9 @@ type Display = Ssd1306<
 #[cfg(feature = "kb2040")]
 type I2CPeripheral =
     I2CPeripheralEventIterator<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+#[cfg(feature = "sf2040")]
+type I2CPeripheral =
+    I2CPeripheralEventIterator<I2C0, (Pin<Gpio16, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
 #[cfg(feature = "pico")]
 type I2CPeripheral =
     I2CPeripheralEventIterator<I2C0, (Pin<Gpio20, FunctionI2C>, Pin<Gpio21, FunctionI2C>)>;
@@ -130,6 +148,8 @@ type ScannedKeys = ArrayDeque<[u8; BOARD_MAX_KEYS], behavior::Wrapping>;
 
 #[cfg(feature = "kb2040")]
 type BootButton = Pin<Gpio11, PullUpInput>;
+#[cfg(feature = "sf2040")]
+type BootButton = ();
 #[cfg(feature = "pico")]
 type BootButton = Pin<Gpio28, PullUpInput>;
 
@@ -138,7 +158,7 @@ const I2C_PERIPHERAL_ADDR: u8 = 0x56;
 /// The amount of time between each scan of the matrix for switch presses.
 /// This is always the time from the *start* of the previous scan.
 const SCAN_TIME_US: u32 = 1000;
-const COMMS_CHECK_US: u32 = 241;
+const COMMS_CHECK_US: u32 = 500;
 const BOARD_MAX_KEYS: usize = 8;
 
 pub enum Either<T, U> {
@@ -213,7 +233,7 @@ mod app {
         rotary: RotaryEncoder,
         last_rotary: Option<Event>,
         display: Display,
-        timer: bsp::hal::timer::Timer,
+        timer: Timer,
         alarm0: bsp::hal::timer::Alarm0,
         alarm1: Option<bsp::hal::timer::Alarm1>,
         #[lock_free]
@@ -230,6 +250,7 @@ mod app {
 
     #[local]
     struct Local {
+        #[cfg(any(feature = "pico", feature = "kb2040"))]
         boot_button: BootButton,
         #[cfg(feature = "pico")]
         led: Pin<Gpio25, PushPullOutput>,
@@ -288,6 +309,7 @@ mod app {
 
         defmt::info!("Configuring trackball and i2c comms");
         // Right functions as the I2C controller for communication between the halves and for USB.
+        #[allow(unused_mut)]
         let mut i2c0 = if is_right {
             Either::Right({
                 let i2c = bsp::hal::I2C::i2c0(
@@ -301,16 +323,22 @@ mod app {
                     &mut resets,
                     clocks.peripheral_clock.freq(),
                 );
-                // let i2c = TrackballInterface::new(i2c);
-                // let mut trackball = TrackballBuilder::<_, Pin<_, _>>::new(i2c)
-                //     .interrupt_pin(keyboard_pins.trackball_irq)
-                //     .build();
-                // let _ = trackball.init();
-                // trackball
-                //     .interrupt()
-                //     .set_interrupt_enabled(Interrupt::EdgeLow, true);
-                // trackball
-                i2c
+                #[cfg(feature = "trackball")]
+                {
+                    let i2c = TrackballInterface::new(i2c);
+                    let mut trackball = TrackballBuilder::<_, Pin<_, _>>::new(i2c)
+                        .interrupt_pin(keyboard_pins.trackball_irq)
+                        .build();
+                    let _ = trackball.init();
+                    trackball
+                        .interrupt()
+                        .set_interrupt_enabled(Interrupt::EdgeLow, true);
+                    trackball
+                }
+                #[cfg(not(feature = "trackball"))]
+                {
+                    i2c
+                }
             })
         } else {
             Either::Left(bsp::hal::I2C::new_peripheral_event_iterator(
@@ -412,14 +440,14 @@ mod app {
         // The alarm used to trigger the matrix scan.
         let mut alarm0 = timer.alarm_0().unwrap();
         let _ = alarm0.schedule(SCAN_TIME_US.microseconds());
-        alarm0.enable_interrupt(&mut timer);
+        alarm0.enable_interrupt();
 
         let alarm1 = if is_right {
             None
         } else {
             let mut alarm1 = timer.alarm_1().unwrap();
             let _ = alarm1.schedule(COMMS_CHECK_US.microseconds());
-            alarm1.enable_interrupt(&mut timer);
+            alarm1.enable_interrupt();
             Some(alarm1)
         };
 
@@ -467,7 +495,7 @@ mod app {
         }
 
         // Start watchdog and feed it with the lowest priority task at 1000hz
-        watchdog.start(10_000.microseconds());
+        watchdog.start((16777215 >> 1).microseconds()); // 10_000.microseconds());
 
         (
             Shared {
@@ -500,6 +528,8 @@ mod app {
                 is_right,
                 scanned_events: ArrayDeque::new(),
             },
+            #[cfg(feature = "sf2040")]
+            Local {},
             #[cfg(feature = "kb2040")]
             Local {
                 boot_button: keyboard_pins.boot_button,
@@ -610,6 +640,7 @@ mod app {
         while let Ok(0) = keyboard_class.lock(|k| k.as_mut().unwrap().write(report.as_bytes())) {}
     }
 
+    // #[cfg(feature = "trackball")]
     // #[task(binds = IO_IRQ_BANK0, priority = 1, shared = [i2c0, mouse_data, watchdog, display])]
     // fn trackball_irq(c: trackball_irq::Context) {
     //     defmt::info!("trackball irq");
@@ -689,6 +720,7 @@ mod app {
     //     }
     // }
 
+    // #[cfg(feature = "trackball")]
     // #[task(priority = 2, shared = [usb_dev, mouse_class])]
     // fn handle_mouse_event(
     //     c: handle_mouse_event::Context,
@@ -742,35 +774,38 @@ mod app {
         local = [boot_button, led]
     )]
     fn scan_timer_irq(c: scan_timer_irq::Context) {
+        #[cfg(feature = "pico")]
         let mut timer = c.shared.timer;
-        let alarm0 = c.shared.alarm0;
+        let mut alarm0 = c.shared.alarm0;
         let mut rotary = c.shared.rotary;
         let mut last_rotary = c.shared.last_rotary;
+        #[cfg(any(feature = "kb2040", feature = "pico"))]
         let boot_button = c.local.boot_button;
         let mut scanned_events = c.shared.scanned_events;
         let mut i2c0 = c.shared.i2c0;
         let is_right = *c.shared.is_right;
 
+        #[cfg(any(feature = "kb2040", feature = "pico"))]
         if boot_button.is_low().unwrap() {
             bsp::hal::rom_data::reset_to_usb_boot(0, 0);
         }
 
         // Immediately clear the interrupt and schedule the next scan alarm0.
-        (&mut timer, alarm0).lock(|t, a| {
-            a.clear_interrupt(t);
+        alarm0.lock(|a| {
+            a.clear_interrupt();
             let _ = a.schedule(SCAN_TIME_US.microseconds());
         });
 
-        let _timer_dropg = {
-            #[cfg(feature = "pico")]
-            {
-                let start = timer.lock(|t| t.get_counter());
-                DropGuard::new(move || {
-                    let end = timer.lock(|t| t.get_counter());
-                    defmt::info!("board comms took {}", end.saturating_sub(start));
-                })
-            }
-        };
+        // let _timer_dropg = {
+        //     #[cfg(feature = "pico")]
+        //     {
+        //         let start = timer.lock(|t| t.get_counter());
+        //         DropGuard::new(move || {
+        //             let end = timer.lock(|t| t.get_counter());
+        //             defmt::info!("board comms took {}", end.saturating_sub(start));
+        //         })
+        //     }
+        // };
 
         // Feed the watchdog so it knows we haven't frozen/crashed.
         c.shared.watchdog.feed();
@@ -796,6 +831,17 @@ mod app {
                     DropGuard::new(|| c.local.led.set_low().unwrap())
                 }
             }; // Try to read data from the other side first.
+            let _timer_dropg = {
+                #[cfg(feature = "pico")]
+                {
+                    let start = timer.lock(|t| t.get_counter());
+                    defmt::info!("starting comms timer at {}", start);
+                    DropGuard::new(move || {
+                        let end = timer.lock(|t| t.get_counter());
+                        defmt::info!("board comms took {}", end.saturating_sub(start));
+                    })
+                }
+            };
             let data = i2c0.lock(
                 |i2c: &mut Either<I2CPeripheral, I2CController>| -> Result<_, bsp::hal::i2c::Error> {
                     #[cfg(feature="trackball")]
@@ -816,6 +862,9 @@ mod app {
                     }
                 },
             );
+            #[allow(clippy::drop_copy)]
+            drop(_timer_dropg);
+            #[allow(clippy::drop_copy)]
             drop(dropg);
 
             match data {
@@ -960,7 +1009,6 @@ mod app {
             scanned_events,
             i2c0,
             sio_fifo,
-            timer,
             alarm1
         ]
     )]
@@ -968,14 +1016,13 @@ mod app {
         let scanned_events = c.shared.scanned_events;
         let i2c0 = c.shared.i2c0;
         let sio_fifo = c.shared.sio_fifo;
-        let timer = c.shared.timer;
-        let alarm1 = c.shared.alarm1;
+        let mut alarm1 = c.shared.alarm1;
 
         // Immediately clear the interrupt and schedule the next scan alarm0.
-        (timer, alarm1).lock(|t, a| {
+        alarm1.lock(|a| {
             // Panic safe since we can only enter this function if this is not None;
             let a = a.as_mut().unwrap();
-            a.clear_interrupt(t);
+            a.clear_interrupt();
             let _ = a.schedule(SCAN_TIME_US.microseconds());
         });
 

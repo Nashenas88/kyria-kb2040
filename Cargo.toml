@@ -9,7 +9,7 @@ resolver = "2"
 [dependencies]
 cortex-m = "0.7.4"
 cortex-m-rt = "0.7.1"
-cortex-m-rtic = "1.0.0"
+cortex-m-rtic = "1.1.2"
 embedded-hal = { version = "0.2.7", features = ["unproven"] }
 embedded-time = "0.12.1"
 
@@ -26,13 +26,14 @@ usbd-hid = "0.6.0"
 # Led support
 smart-leds = "0.3.0"
 # This revision supports rp2040 version 0.4.0.
-ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "b126e70c23e192896caa38aa1a54d4877745fb1f" }
+# ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "b126e70c23e192896caa38aa1a54d4877745fb1f" }
 nb = "1.0.0"
-pio = "0.1.0"
+pio = "0.2.0"
 
 # This revision supports boot2 by default.
-adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "c180e7867b9463793c993a05e792c8ffb690d870", optional = true }
-rp-pico = { git = "https://github.com/rp-rs/rp-hal", rev = "c180e7867b9463793c993a05e792c8ffb690d870", optional = true }
+adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+rp-pico = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
 
 # This revision supports hold tap, easier to use.
 # keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "58ac73cfcd09659bf31ee405ff9f5e23b0edc527" }
@@ -42,13 +43,14 @@ pimoroni-trackball-driver = { path = "../pimoroni-trackball-driver", optional = 
 
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7.1"
-tinybmp = "0.3.1"
+tinybmp = "0.3.3"
 rotary-encoder-hal = { version = "0.5.0", features = ["table-decoder"] }
 arraydeque = { version = "0.4.5", default-features = false }
 
 [features]
-"default" = ["kb2040", ]
+"default" = ["kb2040"]
 "kb2040" = ["adafruit-kb2040", "panic-halt", "mock_defmt"]
+"sf2040" = ["sparkfun-pro-micro-rp2040", "panic-halt", "mock_defmt"]
 "pico" = ["rp-pico", "defmt", "defmt-rtt", "panic-probe"]
 trackball = ["pimoroni-trackball-driver"]
 
@@ -105,4 +107,4 @@ lto = 'fat'
 opt-level = 3
 
 [patch.crates-io]
-rp2040-hal = { git = "https://github.com/rp-rs/rp-hal", rev = "c180e7867b9463793c993a05e792c8ffb690d870" }
+rp2040-hal = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9" }

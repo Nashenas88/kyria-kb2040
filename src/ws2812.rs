@@ -8,6 +8,7 @@
 use crate::bsp::hal::gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode};
 use crate::bsp::hal::pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO};
 use embedded_time::fixed_point::FixedPoint;
+use pio::Program;
 use smart_leds::{SmartLedsWrite, RGB8};
 
 pub struct Ws2812<P, SM, I>
@@ -59,7 +60,7 @@ where
         // Do data bit = 0
         a.nop_with_delay_and_side_set(T2 - 2, 0);
         a.bind(&mut wrap_source);
-        let program = a.assemble_with_wrap(wrap_source, wrap_target);
+        let program: Program<32> = a.assemble_with_wrap(wrap_source, wrap_target);
 
         // Install the program into PIO instruction memory.
         let installed = pio.install(&program).unwrap();
