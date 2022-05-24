@@ -158,7 +158,6 @@ const I2C_PERIPHERAL_ADDR: u8 = 0x56;
 /// The amount of time between each scan of the matrix for switch presses.
 /// This is always the time from the *start* of the previous scan.
 const SCAN_TIME_US: u32 = 1000;
-const COMMS_CHECK_US: u32 = 500;
 const BOARD_MAX_KEYS: usize = 8;
 
 pub enum Either<T, U> {
@@ -235,7 +234,6 @@ mod app {
         display: Display,
         timer: Timer,
         alarm0: bsp::hal::timer::Alarm0,
-        alarm1: Option<bsp::hal::timer::Alarm1>,
         #[lock_free]
         watchdog: bsp::hal::watchdog::Watchdog,
         #[lock_free]
@@ -300,12 +298,13 @@ mod app {
         defmt::info!("Configuring rotary");
         // TODO how to make this per-board?
         // The rotaries are wired differently on the left and right keyboards.
-        let rotary = if is_right {
+        let mut rotary = if is_right {
             Rotary::new(keyboard_pins.rotary1.into(), keyboard_pins.rotary2.into())
         } else {
             // TODO how to make this per-board?
             Rotary::new(keyboard_pins.rotary2.into(), keyboard_pins.rotary1.into())
         };
+        let _result = rotary.update();
 
         defmt::info!("Configuring trackball and i2c comms");
         // Right functions as the I2C controller for communication between the halves and for USB.
@@ -319,10 +318,14 @@ mod app {
                     #[cfg(feature = "trackball")]
                     100.kHz(),
                     #[cfg(not(feature = "trackball"))]
-                    400.kHz(),
+                    200.kHz(),
                     &mut resets,
                     clocks.peripheral_clock.freq(),
                 );
+                // Prevent interrupts from firing on the right side.
+                bsp::pac::NVIC::mask(bsp::pac::interrupt::I2C0_IRQ);
+                i2c.disable_interrupts();
+
                 #[cfg(feature = "trackball")]
                 {
                     let i2c = TrackballInterface::new(i2c);
@@ -341,7 +344,7 @@ mod app {
                 }
             })
         } else {
-            Either::Left(bsp::hal::I2C::new_peripheral_event_iterator(
+            Either::Left(bsp::hal::I2C::new_peripheral_event_iterator_with_irq(
                 c.device.I2C0,
                 keyboard_pins.sda0,
                 keyboard_pins.scl0,
@@ -442,15 +445,6 @@ mod app {
         let _ = alarm0.schedule(SCAN_TIME_US.microseconds());
         alarm0.enable_interrupt();
 
-        let alarm1 = if is_right {
-            None
-        } else {
-            let mut alarm1 = timer.alarm_1().unwrap();
-            let _ = alarm1.schedule(COMMS_CHECK_US.microseconds());
-            alarm1.enable_interrupt();
-            Some(alarm1)
-        };
-
         defmt::info!("Creating usb bus...");
 
         // The bus that is used to manage the device and class below.
@@ -494,8 +488,10 @@ mod app {
             display.write_str("Left\n").unwrap();
         }
 
+        // Slower watchdog for debugging.
+        watchdog.start((2_000_000).microseconds());
         // Start watchdog and feed it with the lowest priority task at 1000hz
-        watchdog.start((16777215 >> 1).microseconds()); // 10_000.microseconds());
+        // watchdog.start(10_000.microseconds());
 
         (
             Shared {
@@ -519,7 +515,6 @@ mod app {
                 i2c0,
                 timer,
                 alarm0,
-                alarm1,
                 watchdog,
                 matrix,
                 layout,
@@ -575,7 +570,7 @@ mod app {
     #[task(
         priority = 2,
         capacity = 8,
-        shared = [usb_dev, keyboard_class, i2c0, layout, rotary, sio_fifo],
+        shared = [usb_dev, display, keyboard_class, i2c0, layout, rotary, sio_fifo],
     )]
     fn handle_event(c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         let mut layout = c.shared.layout;
@@ -583,6 +578,7 @@ mod app {
         let mut usb_dev = c.shared.usb_dev;
         let i2c0 = c.shared.i2c0;
         let sio_fifo = c.shared.sio_fifo;
+        let display = c.shared.display;
 
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
@@ -598,25 +594,46 @@ mod app {
 
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
-        let report: key_code::KbHidReport = (layout, i2c0, sio_fifo).lock(|l, i2c, sf| {
-            if let keyberon::layout::CustomEvent::Press(&custom_action) = l.tick() {
-                let serialized = custom_action.into();
-                #[cfg(feature = "trackball")]
-                if let Either::Right(trackball) = i2c {
-                    let trackball: &mut Trackball = trackball;
-                    let _ = trackball
-                        .i2c()
-                        .write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]);
+        let report: key_code::KbHidReport =
+            (layout, i2c0, sio_fifo, display).lock(|l, i2c, sf, d| {
+                if let keyberon::layout::CustomEvent::Press(&custom_action) = l.tick() {
+                    let serialized = custom_action.into();
+                    #[cfg(feature = "trackball")]
+                    if let Either::Right(trackball) = i2c {
+                        let trackball: &mut Trackball = trackball;
+                        let _ = trackball
+                            .i2c()
+                            .write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]);
+                    }
+                    #[cfg(not(feature = "trackball"))]
+                    if let Either::Right(i2c) = i2c {
+                        if let Err(e) = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]) {
+                            let e: bsp::hal::i2c::Error = e;
+                            let _ = match e {
+                                bsp::hal::i2c::Error::Abort(_) => d.write_str("abort\n"),
+                                bsp::hal::i2c::Error::InvalidReadBufferLength => {
+                                    d.write_str("readlen\n")
+                                }
+                                bsp::hal::i2c::Error::InvalidWriteBufferLength => {
+                                    d.write_str("writelen\n")
+                                }
+                                bsp::hal::i2c::Error::AddressOutOfRange(_) => d.write_str("aor\n"),
+                                bsp::hal::i2c::Error::AddressReserved(_) => d.write_str("ar\n"),
+                                _ => d.write_str("abc\n"),
+                            };
+                        }
+                    }
+                    sf.write_blocking(serialized as u32);
+                    // update led state, communicate to other half
+
+                    let mut buf = [0u8; 32];
+                    let mut wrapper = Wrapper::new(&mut buf);
+                    let _ = writeln!(&mut wrapper, "set_ui {}\n", serialized);
+                    let written = wrapper.written();
+                    let _ = d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
                 }
-                #[cfg(not(feature = "trackball"))]
-                if let Either::Right(i2c) = i2c {
-                    let _ = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]);
-                }
-                sf.write_blocking(serialized as u32);
-                // update led state, communicate to other half
-            }
-            l.keycodes().collect()
-        });
+                l.keycodes().collect()
+            });
 
         // Set the keyboard report on the usb class.
         let was_report_modified = keyboard_class.lock(|k| {
@@ -770,12 +787,14 @@ mod app {
             last_rotary,
             scanned_events,
             i2c0,
+            display,
         ],
         local = [boot_button, led]
     )]
     fn scan_timer_irq(c: scan_timer_irq::Context) {
         #[cfg(feature = "pico")]
         let mut timer = c.shared.timer;
+        let mut display = c.shared.display;
         let mut alarm0 = c.shared.alarm0;
         let mut rotary = c.shared.rotary;
         let mut last_rotary = c.shared.last_rotary;
@@ -835,7 +854,6 @@ mod app {
                 #[cfg(feature = "pico")]
                 {
                     let start = timer.lock(|t| t.get_counter());
-                    defmt::info!("starting comms timer at {}", start);
                     DropGuard::new(move || {
                         let end = timer.lock(|t| t.get_counter());
                         defmt::info!("board comms took {}", end.saturating_sub(start));
@@ -844,14 +862,14 @@ mod app {
             };
             let data = i2c0.lock(
                 |i2c: &mut Either<I2CPeripheral, I2CController>| -> Result<_, bsp::hal::i2c::Error> {
-                    #[cfg(feature="trackball")]
-                    if let Either::Right(trackball) = i2c {
-                        let mut buf = [0u8; BOARD_MAX_KEYS];
-                        trackball.i2c().write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
-                        Ok(buf)
-                    } else {
-                        defmt::unreachable!()
-                    }
+                    // #[cfg(feature="trackball")]
+                    // if let Either::Right(trackball) = i2c {
+                    //     let mut buf = [0u8; BOARD_MAX_KEYS];
+                    //     trackball.i2c().write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
+                    //     Ok(buf)
+                    // } else {
+                    //     defmt::unreachable!()
+                    // }
                     #[cfg(not(feature="trackball"))]
                     if let Either::Right(i2c) = i2c {
                         let mut buf = [0u8; BOARD_MAX_KEYS];
@@ -966,36 +984,23 @@ mod app {
 
             let stop_index = last + 1;
             let mut byte: u8;
-            for (idx, e) in es.iter().enumerate().take(stop_index) {
-                if let Some(ev) = e {
-                    let (i, j) = ev.coord();
-                    // 7 is the max value we can encode, and the highest row/col count on this board
-                    if i > 7 || j > 7 {
-                        continue;
-                    }
-
-                    byte = (j << COL_SHIFT) & COL_BIT_MASK;
-                    byte |= (i << ROW_SHIFT) & ROW_BIT_MASK;
-                    byte |= (ev.is_press() as u8) << PRESSED_SHIFT;
-                    if idx + 1 == stop_index {
-                        byte |= 0b1000_0000;
-                    }
-
-                    scanned_events.lock(
-                        |s: &mut ArrayDeque<[u8; BOARD_MAX_KEYS], behavior::Wrapping>| {
-                            let _ = s.push_back(byte);
-                        },
-                    );
+            for e in es.iter().take(stop_index).flatten() {
+                let (i, j) = e.coord();
+                // 7 is the max value we can encode, and the highest row/col count on this board
+                if i > 7 || j > 7 {
+                    continue;
                 }
-            }
 
-            // (i2c0, scanned_events, sio_fifo).lock(|i2c, s, sf| {
-            //     if let Either::Left(i2c) = i2c {
-            //         i2c_peripheral_event_loop(i2c, s, sf);
-            //     } else {
-            //         defmt::unreachable!()
-            //     }
-            // });
+                byte = (j << COL_SHIFT) & COL_BIT_MASK;
+                byte |= (i << ROW_SHIFT) & ROW_BIT_MASK;
+                byte |= (e.is_press() as u8) << PRESSED_SHIFT;
+
+                scanned_events.lock(
+                    |s: &mut ArrayDeque<[u8; BOARD_MAX_KEYS], behavior::Wrapping>| {
+                        let _ = s.push_back(byte);
+                    },
+                );
+            }
         }
     }
 
@@ -1003,43 +1008,43 @@ mod app {
     const SET_UI: u8 = 0x81;
 
     #[task(
-        binds = TIMER_IRQ_1,
-        priority = 2,
+        binds = I2C0_IRQ,
+        priority = 4,
         shared = [
             scanned_events,
             i2c0,
             sio_fifo,
-            alarm1
+            display,
         ]
     )]
     fn i2c_peripheral_event_loop(c: i2c_peripheral_event_loop::Context) {
         let scanned_events = c.shared.scanned_events;
         let i2c0 = c.shared.i2c0;
         let sio_fifo = c.shared.sio_fifo;
-        let mut alarm1 = c.shared.alarm1;
-
-        // Immediately clear the interrupt and schedule the next scan alarm0.
-        alarm1.lock(|a| {
-            // Panic safe since we can only enter this function if this is not None;
-            let a = a.as_mut().unwrap();
-            a.clear_interrupt();
-            let _ = a.schedule(SCAN_TIME_US.microseconds());
-        });
+        let mut display = c.shared.display;
 
         (i2c0, scanned_events, sio_fifo).lock(|i2c0, scanned_events, sio_fifo| {
-            let i2c = if let Either::Left(i2c) = i2c0 {
-                i2c
-            } else {
-                defmt::unreachable!();
+            let i2c = match i2c0 {
+                Either::Left(i2c) => i2c,
+                Either::Right(_) => {
+                    defmt::info!("got interrupt");
+                    // Don't panic. Sometimes the tx_empty interrupt triggers even
+                    // though it's masked. It can't be cleared with a read, so just return.
+                    return;
+                }
             };
+
+            let mut set_ui = false;
 
             while let Some(event) = i2c.next() {
                 match event {
                     I2CEvent::Start | I2CEvent::Restart => {}
                     I2CEvent::TransferRead => {
                         let mut buf = [0; BOARD_MAX_KEYS];
+                        // let mut num_keys = 0;
                         for (e, b) in scanned_events.drain(..).zip(buf.iter_mut()) {
                             *b = e;
+                            // num_keys += 1;
                         }
                         let mut sent = 0;
                         while sent < buf.len() {
@@ -1047,21 +1052,50 @@ mod app {
                         }
                     }
                     I2CEvent::TransferWrite => {
-                        let mut command = 0;
-                        if i2c.read(core::slice::from_mut(&mut command)) == 1 {
-                            match command {
-                                READ_KEYS => {
-                                    let mut buf = [0u8; BOARD_MAX_KEYS];
-                                    i2c.read(&mut buf);
-                                }
-                                SET_UI => {
-                                    let mut layer = 0;
-                                    i2c.read(core::slice::from_mut(&mut layer));
-                                    sio_fifo.write_blocking(layer as u32)
-                                }
-                                _ => {
-                                    // No-op, we have no idea what this is.
-                                }
+                        if set_ui {
+                            set_ui = false;
+                            let mut layer: u8 = 0;
+                            i2c.read(core::slice::from_mut(&mut layer));
+                            sio_fifo.write_blocking(layer as u32);
+
+                            let mut buf = [0u8; 32];
+                            let mut wrapper = Wrapper::new(&mut buf);
+                            let _ = writeln!(&mut wrapper, "set_ui {}\n", layer);
+                            let written = wrapper.written();
+                            let _ = display.lock(|d| {
+                                d.write_str(unsafe {
+                                    core::str::from_utf8_unchecked(&buf[..written])
+                                })
+                            });
+                        }
+                        let mut command = [0u8; 2];
+                        let read = i2c.read(&mut command);
+                        match command {
+                            [READ_KEYS, _] => {
+                                // no-op
+                                defmt::info!("read request")
+                            }
+                            [SET_UI, layer] => {
+                                // let mut layer: u8 = 0;
+                                // let read = i2c.read(core::slice::from_mut(&mut layer));
+                                // if read == 0 {
+                                //     set_ui = true;
+                                //     continue;
+                                // }
+                                sio_fifo.write_blocking(layer as u32);
+
+                                let mut buf = [0u8; 32];
+                                let mut wrapper = Wrapper::new(&mut buf);
+                                let _ = writeln!(&mut wrapper, "set_ui {} {}\n", layer, read);
+                                let written = wrapper.written();
+                                let _ = display.lock(|d| {
+                                    d.write_str(unsafe {
+                                        core::str::from_utf8_unchecked(&buf[..written])
+                                    })
+                                });
+                            }
+                            _ => {
+                                // No-op, we have no idea what this is.
                             }
                         }
                     }

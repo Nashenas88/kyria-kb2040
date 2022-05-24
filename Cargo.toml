@@ -31,9 +31,12 @@ nb = "1.0.0"
 pio = "0.2.0"
 
 # This revision supports boot2 by default.
-adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
-sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
-rp-pico = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+# adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+# sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+# rp-pico = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+adafruit-kb2040 = { path = "../rp-hal/boards/adafruit-kb2040", optional = true }
+sparkfun-pro-micro-rp2040 = { path = "../rp-hal/boards/sparkfun-pro-micro-rp2040", optional = true }
+rp-pico = { path = "../rp-hal/boards/rp-pico", optional = true }
 
 # This revision supports hold tap, easier to use.
 # keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "58ac73cfcd09659bf31ee405ff9f5e23b0edc527" }
@@ -107,4 +110,5 @@ lto = 'fat'
 opt-level = 3
 
 [patch.crates-io]
-rp2040-hal = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9" }
+# rp2040-hal = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9" }
+rp2040-hal = { path = "../rp-hal/rp2040-hal" }
