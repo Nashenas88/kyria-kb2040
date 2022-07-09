@@ -5,10 +5,11 @@ use crate::bsp::pac::{CorePeripherals, Peripherals};
 use crate::layout::CustomAction;
 use crate::ws2812::Ws2812;
 use embedded_time::rate::Hertz;
-use smart_leds::{brightness, gamma};
+use smart_leds::brightness;
 
 const LED_ANIM_TIME_US: u32 = 3_000;
 const CORE1_LOOP_US: u32 = 1_000;
+const LED_BRIGHTNESS: u8 = 64;
 
 pub(crate) fn core1_task() -> ! {
     let mut pac = unsafe { Peripherals::steal() };
@@ -72,7 +73,7 @@ pub(crate) fn core1_task() -> ! {
             }
 
             let leds = anim_controller.leds();
-            SmartLedsWrite::write(&mut ws, brightness(gamma(leds.into_iter()), 32)).unwrap();
+            SmartLedsWrite::write(&mut ws, brightness(leds.into_iter(), LED_BRIGHTNESS)).unwrap();
         }
     }
 }

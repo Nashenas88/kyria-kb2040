@@ -21,7 +21,8 @@ panic-probe = { version = "0.3.0", features = ["print-defmt"], optional = true }
 
 usb-device= "0.2.8"
 usbd-serial = "0.1.1"
-usbd-hid = "0.6.0"
+# usbd-hid = "0.6.0"
+usbd-hid = { git = "https://github.com/twitchyliquid64/usbd-hid", rev = "d0a80008476d74ef2017908ce256dc56bfc396b1" }
 
 # Led support
 smart-leds = "0.3.0"
@@ -31,18 +32,17 @@ nb = "1.0.0"
 pio = "0.2.0"
 
 # This revision supports boot2 by default.
-# adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
-# sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
-# rp-pico = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9", optional = true }
+# adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "3c4d8f0b43461a806eefdbd79d721512e8c729d3", optional = true }
+# sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal", rev = "3c4d8f0b43461a806eefdbd79d721512e8c729d3", optional = true }
+# rp-pico = { git = "https://github.com/rp-rs/rp-hal", rev = "3c4d8f0b43461a806eefdbd79d721512e8c729d3", optional = true }
 adafruit-kb2040 = { path = "../rp-hal/boards/adafruit-kb2040", optional = true }
 sparkfun-pro-micro-rp2040 = { path = "../rp-hal/boards/sparkfun-pro-micro-rp2040", optional = true }
 rp-pico = { path = "../rp-hal/boards/rp-pico", optional = true }
 
 # This revision supports hold tap, easier to use.
 # keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "58ac73cfcd09659bf31ee405ff9f5e23b0edc527" }
-keyberon = { git = "https://github.com/nashenas88/keyberon", rev = "e0d6c165260e2d2f6d028c9d7b928e2b23183aaa" }
-# pimoroni-trackball-driver = "0.1.1"
-pimoroni-trackball-driver = { path = "../pimoroni-trackball-driver", optional = true }
+# keyberon = { git = "https://github.com/nashenas88/keyberon", rev = "e0d6c165260e2d2f6d028c9d7b928e2b23183aaa" }
+keyberon = { path = "../keyberon" }
 
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7.1"
@@ -55,7 +55,6 @@ arraydeque = { version = "0.4.5", default-features = false }
 "kb2040" = ["adafruit-kb2040", "panic-halt", "mock_defmt"]
 "sf2040" = ["sparkfun-pro-micro-rp2040", "panic-halt", "mock_defmt"]
 "pico" = ["rp-pico", "defmt", "defmt-rtt", "panic-probe"]
-trackball = ["pimoroni-trackball-driver"]
 
 # cargo build/run
 [profile.dev]
@@ -110,5 +109,5 @@ lto = 'fat'
 opt-level = 3
 
 [patch.crates-io]
-# rp2040-hal = { git = "https://github.com/rp-rs/rp-hal", rev = "a4b04862ae768d326675c02c47225f8bbef04eb9" }
+# rp2040-hal = { git = "https://github.com/rp-rs/rp-hal", rev = "3c4d8f0b43461a806eefdbd79d721512e8c729d3" }
 rp2040-hal = { path = "../rp-hal/rp2040-hal" }

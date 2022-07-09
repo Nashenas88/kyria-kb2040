@@ -3,17 +3,15 @@
     "rust-analyzer.checkOnSave.allTargets": false,
     "rust-analyzer.cargo.noDefaultFeatures": true,
     "rust-analyzer.cargo.features": [
-        // "pico"
+        "pico"
         // "sf2040"
-        "kb2040",
-        // "trackball"
+        // "kb2040",
     ],
     "rust-analyzer.checkOnSave.noDefaultFeatures": true,
     "rust-analyzer.checkOnSave.features": [
-        // "pico"
+        "pico"
         // "sf2040"
-        "kb2040",
-        // "trackball"
+        // "kb2040",
     ],
     "editor.formatOnSave": true,
     "rust-analyzer.inlayHints.enable": false

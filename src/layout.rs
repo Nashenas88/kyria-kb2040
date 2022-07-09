@@ -9,6 +9,31 @@ pub enum CustomAction {
     NumpadLed,
     NavLed,
     SymLed,
+    MediaPlayPause,
+    MediaNext,
+    MediaBack,
+    MediaMute,
+    MediaVolumeUp,
+    MediaVolumeDown,
+}
+
+impl CustomAction {
+    pub(crate) fn is_led(&self) -> bool {
+        match self {
+            CustomAction::QwertyLed
+            | CustomAction::ColemakLed
+            | CustomAction::LayerSelectLed
+            | CustomAction::NumpadLed
+            | CustomAction::NavLed
+            | CustomAction::SymLed => true,
+            CustomAction::MediaPlayPause
+            | CustomAction::MediaNext
+            | CustomAction::MediaBack
+            | CustomAction::MediaMute
+            | CustomAction::MediaVolumeUp
+            | CustomAction::MediaVolumeDown => false,
+        }
+    }
 }
 
 impl From<u8> for CustomAction {
@@ -34,6 +59,7 @@ impl From<CustomAction> for u8 {
             CustomAction::NumpadLed => 3,
             CustomAction::NavLed => 4,
             CustomAction::SymLed => 5,
+            _ => panic!("only led codes can serialize to integer"),
         }
     }
 }
@@ -52,6 +78,13 @@ const LAYER: Action = ma![CustomAction::LayerSelectLed, l(2)];
 const NUM_PAD: Action = ma![CustomAction::NumpadLed, d(3)];
 const NAV: Action = ma![CustomAction::NavLed, d(4)];
 const SYM: Action = ma![CustomAction::SymLed, l(5)];
+
+const MP: Action = Action::Custom(CustomAction::MediaPlayPause);
+const MN: Action = Action::Custom(CustomAction::MediaNext);
+const MB: Action = Action::Custom(CustomAction::MediaBack);
+// const VM: Action = Action::Custom(CustomAction::MediaMute);
+const VU: Action = Action::Custom(CustomAction::MediaVolumeUp);
+const VD: Action = Action::Custom(CustomAction::MediaVolumeDown);
 
 /// The number of columns on the keyboard.
 pub(crate) const NCOLS: usize = 16;
@@ -130,16 +163,16 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
 
     keyberon::layout::layout! {
         { // (0) Colemak Dh
-            [Escape Q      W        F        P      B      n      n          n      n     J       L      U      Y          ;      -    ]
-            [Tab   {A_SFT}{R_CTL}  {S_ALT}  {T_GUI} G      n      n          n      n     M      {N_GUI}{E_ALT}{I_CTL}    {O_SFT} Quote]
-            [t      Z      X        C        D      V      1      2          5      6     K       H      ,      .          /      t    ]
-            [n      Left   CapsLock Right   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} Up     ScrollLock Down   n    ]
+            [Escape   Q      W      F      P      B      n      n          n      n     J       L      U      Y      ;      -         ]
+            [Tab     {A_SFT}{R_CTL}{S_ALT}{T_GUI} G      n      n          n      n     M      {N_GUI}{E_ALT}{I_CTL}{O_SFT} Quote     ]
+            [CapsLock Z      X      C      D      V      1      2          5      6     K       H      ,      .      /      ScrollLock]
+            [n       {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}  {VD}    t     {VU}    n         ]
         }
         { // (1) Qwerty
-            [Escape Q      W        E        R      T      n      n          n      n     Y       U      I      O          P       -    ]
-            [Tab   {A_SFT}{S_CTL}  {D_ALT}  {F_GUI} G      n      n          n      n     H      {J_GUI}{K_ALT}{L_CTL}    {SC_SFT} Quote]
-            [t      Z      X        C        V      B      1      2          5      6     N       M      ,      .          /       t    ]
-            [n      Left   CapsLock Right   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}   Up     ScrollLock Down    n    ]
+            [Escape   Q      W      E      R      T      n      n          n      n     Y       U      I      O      P       -         ]
+            [Tab     {A_SFT}{S_CTL}{D_ALT}{F_GUI} G      n      n          n      n     H      {J_GUI}{K_ALT}{L_CTL}{SC_SFT} Quote     ]
+            [CapsLock Z      X      C      V      B      1      2          5      6     N       M      ,      .      /       ScrollLock]
+            [n       {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}  {VD}    t     {VU}     n         ]
         }
         { // (2) Left Layer Selector
             [ t  t       t    t        t        t n  n          n      n  t  t        t        t    t       t]
@@ -157,7 +190,7 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
             [t      Pause      PgUp  Up     PgDown t      t      t          t      t     t       t    t    t          t      t]
             [t      PScreen    Left  Down   Right  t      t      t          t      t     t       RGui RAlt RCtrl      RShift t]
             [t      ScrollLock Home  Insert End    t      1      2          5      6     t       t    t    t          t      t]
-            [n      t          t     t     {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} t    ScrollLock t      n]
+            [n      Left       t     Right {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} Up   ScrollLock Down   n]
         }
         { // (5) Symbol
             [n     1       2       3       4       5      t     t    t t      6      7       8       9       0       n]

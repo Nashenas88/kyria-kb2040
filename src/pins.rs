@@ -24,8 +24,6 @@ pub(crate) struct KeyboardPins {
     pub(crate) scl0: Pin<Gpio1, FunctionI2C>,
     pub(crate) sda1: Pin<Gpio2, FunctionI2C>,
     pub(crate) scl1: Pin<Gpio3, FunctionI2C>,
-    #[cfg(feature = "trackball")]
-    pub(crate) trackball_irq: Pin<Gpio13, PullUpInput>,
     pub(crate) boot_button: Pin<Gpio11, PullUpInput>,
     pub(crate) col0: DynPin,
     pub(crate) col1: DynPin,
@@ -49,8 +47,6 @@ pub(crate) struct KeyboardPins {
     pub(crate) scl0: Pin<Gpio1, FunctionI2C>,
     pub(crate) sda1: Pin<Gpio2, FunctionI2C>,
     pub(crate) scl1: Pin<Gpio3, FunctionI2C>,
-    #[cfg(feature = "trackball")]
-    pub(crate) trackball_irq: Pin<Gpio13, PullUpInput>,
     pub(crate) col0: DynPin,
     pub(crate) col1: DynPin,
     pub(crate) col2: DynPin,
@@ -74,8 +70,6 @@ pub(crate) struct KeyboardPins {
     pub(crate) scl0: Pin<Gpio21, FunctionI2C>,
     pub(crate) sda1: Pin<Gpio18, FunctionI2C>,
     pub(crate) scl1: Pin<Gpio19, FunctionI2C>,
-    #[cfg(feature = "trackball")]
-    pub(crate) trackball_irq: Pin<Gpio22, PullUpInput>,
     pub(crate) boot_button: Pin<Gpio28, PullUpInput>,
     pub(crate) led: Pin<Gpio25, PushPullOutput>,
     pub(crate) col0: DynPin,
@@ -156,8 +150,6 @@ pub(crate) fn get_pins(pins: crate::bsp::Pins) -> KeyboardPins {
         scl0: pins.rx.into_mode::<FunctionI2C>(),
         sda1: pins.d2.into_mode::<FunctionI2C>(),
         scl1: pins.d3.into_mode::<FunctionI2C>(),
-        #[cfg(feature = "trackball")]
-        trackball_irq: pins.scl.into_pull_up_input(),
         boot_button: pins.d11.into_pull_up_input(),
         col0,
         col1,
@@ -238,8 +230,6 @@ pub(crate) fn get_pins(pins: crate::bsp::Pins) -> KeyboardPins {
         scl0: pins.rx0.into_mode::<FunctionI2C>(),
         sda1: pins.gpio2.into_mode::<FunctionI2C>(),
         scl1: pins.gpio3.into_mode::<FunctionI2C>(),
-        #[cfg(feature = "trackball")]
-        trackball_irq: pins.scl.into_pull_up_input(),
         col0,
         col1,
         col2,
@@ -274,8 +264,6 @@ pub(crate) fn get_pins(pins: crate::bsp::Pins) -> KeyboardPins {
         scl0: pins.gpio21.into_mode::<FunctionI2C>(),
         sda1: pins.gpio18.into_mode::<FunctionI2C>(),
         scl1: pins.gpio19.into_mode::<FunctionI2C>(),
-        #[cfg(feature = "trackball")]
-        trackball_irq: pins.gpio22.into_pull_up_input(),
         boot_button: pins.gpio28.into_pull_up_input(),
         led: pins.led.into_push_pull_output(),
         col0: pins.gpio2.into_pull_up_input().into(),
