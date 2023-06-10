@@ -1,4 +1,5 @@
 use keyberon::action::{self, d, l};
+use keyberon::key_code::KeyCode;
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Copy, Clone)]
@@ -82,7 +83,7 @@ const SYM: Action = ma![CustomAction::SymLed, l(5)];
 const MP: Action = Action::Custom(CustomAction::MediaPlayPause);
 const MN: Action = Action::Custom(CustomAction::MediaNext);
 const MB: Action = Action::Custom(CustomAction::MediaBack);
-// const VM: Action = Action::Custom(CustomAction::MediaMute);
+const VM: Action = Action::Custom(CustomAction::MediaMute);
 const VU: Action = Action::Custom(CustomAction::MediaVolumeUp);
 const VD: Action = Action::Custom(CustomAction::MediaVolumeDown);
 
@@ -160,42 +161,52 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
     const LB_ALT: Action = home_mod!(&m(&[LShift, LBracket]), &k(RAlt), right_mod);
     const LS_CTL: Action = home_mod!(&k(LBracket), &k(RCtrl), right_mod);
     const QT_SFT: Action = home_mod!(&k(Quote), &k(RShift), right_mod);
+    const C_LCK: Action = Action::KeyCode(KeyCode::CapsLock);
+    const N_LCK: Action = Action::KeyCode(KeyCode::NumLock);
+    const S_LCK: Action = Action::KeyCode(KeyCode::ScrollLock);
+
+    // Physical layout
+    // ******       ******
+    // ******       ******
+    // ********   ********
+    //  ABC****   ****ABC
+    // Where * is a key, A is rotaty AntiClockwise, C is rotary Clockwise and B is rotary button.
 
     keyberon::layout::layout! {
         { // (0) Colemak Dh
-            [Escape   Q      W      F      P      B      n      n          n      n     J       L      U      Y      ;      -         ]
-            [Tab     {A_SFT}{R_CTL}{S_ALT}{T_GUI} G      n      n          n      n     M      {N_GUI}{E_ALT}{I_CTL}{O_SFT} Quote     ]
-            [CapsLock Z      X      C      D      V      1      2          5      6     K       H      ,      .      /      ScrollLock]
-            [n       {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}  {VD}    t     {VU}    n         ]
+            [Escape Q      W      F      P      B      n      n          n      n      J       L      U      Y      ;      -     ]
+            [Tab   {A_SFT}{R_CTL}{S_ALT}{T_GUI} G      n      n          n      n      M      {N_GUI}{E_ALT}{I_CTL}{O_SFT} Quote ]
+            [Grave  Z      X      C      D      V     {C_LCK} LGui       RGui  {S_LCK} K       H      ,      .      /      Bslash]
+            [n     {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter  Delete {SYM}  {VD}   {VM}   {VU}    n     ]
         }
         { // (1) Qwerty
-            [Escape   Q      W      E      R      T      n      n          n      n     Y       U      I      O      P       -         ]
-            [Tab     {A_SFT}{S_CTL}{D_ALT}{F_GUI} G      n      n          n      n     H      {J_GUI}{K_ALT}{L_CTL}{SC_SFT} Quote     ]
-            [CapsLock Z      X      C      V      B      1      2          5      6     N       M      ,      .      /       ScrollLock]
-            [n       {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}  {VD}    t     {VU}     n         ]
+            [Escape Q      W      E      R      T      n      n          n      n      Y       U      I      O      P       -     ]
+            [Tab   {A_SFT}{S_CTL}{D_ALT}{F_GUI} G      n      n          n      n      H      {J_GUI}{K_ALT}{L_CTL}{SC_SFT} Quote ]
+            [Grave  Z      X      C      V      B     {C_LCK} LGui       RGui  {S_LCK} N       M      ,      .      /       Bslash]
+            [n     {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter  Delete {SYM}  {VD}   {VM}   {VU}     n     ]
         }
-        { // (2) Left Layer Selector
-            [ t  t       t    t        t        t n  n          n      n  t  t        t        t    t       t]
-            [ t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t n  n          n      n  t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
-            [ t  t       t    t        t        t 1  2          5      6  t  t        t        t    t       t]
-            [ n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
+        { // (2) Layer Selector
+            [t  t       t    t        t        t n  n          n      n  t  t        t        t    t       t]
+            [t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t n  n          n      n  t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
+            [t  t       t    t        t        t t  t          t      t  t  t        t        t    t       t]
+            [n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
         }
         { // (3) Numpad
-            [t t      t       t    t    t      t      t          t      t       t    Kp7  Kp8 Kp9   KpMinus t]
-            [t LShift LCtrl   LAlt LGui t      t      t          t      t       t    Kp4  Kp5 Kp6   KpPlus  t]
-            [t t      t       t    t    t      1      2          5      6       t    Kp1  Kp2 Kp3   KpEnter t]
-            [n t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0 {SYM} n   KpDot n       n]
+            [t   t      t       t    t    t      n      n          n      n      {N_LCK}     Kp7  Kp8 Kp9   KpMinus t      ]
+            [Tab LShift LCtrl   LAlt LGui t      n      n          n      n       KpSlash    Kp4  Kp5 Kp6   KpPlus  t      ]
+            [t   t      t       t    t    t      t      t          t      t       KpAsterisk Kp1  Kp2 Kp3   KpDot   KpEnter]
+            [n   t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0       {SYM} n   n     n       n      ]
         }
         { // (4) Nav
-            [t      Pause      PgUp  Up     PgDown t      t      t          t      t     t       t    t    t          t      t]
-            [t      PScreen    Left  Down   Right  t      t      t          t      t     t       RGui RAlt RCtrl      RShift t]
+            [t      Pause      PgUp  Up     PgDown t      n      n          n      n     t       t    t    t          t      t]
+            [Tab    PScreen    Left  Down   Right  t      n      n          n      n     t       RGui RAlt RCtrl      RShift t]
             [t      ScrollLock Home  Insert End    t      1      2          5      6     t       t    t    t          t      t]
             [n      Left       t     Right {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} Up   ScrollLock Down   n]
         }
         { // (5) Symbol
-            [n     1       2       3       4       5      t     t    t t      6      7       8       9       0       n]
-            [n    {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n      t     t    t t      n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
-            [n     ~      '`'      |       Bslash  n      t     t    t t      n     ')'     '}'     ']'     '"'      n]
+            [n     1       2       3       4       5      n     n    n n      6      7       8       9       0       n]
+            [Tab  {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n      n     n    n n      n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
+            [n     ~      Grave    |       Bslash  n      t     t    t t      n     ')'     '}'     ']'     '"'      n]
             [n     t       t       t       t       BSpace Space t    t Enter  Delete t       t       t       t       n]
         }
     }

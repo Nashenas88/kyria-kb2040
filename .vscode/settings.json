@@ -1,18 +1,18 @@
 {
     "rust-analyzer.cargo.target": "thumbv6m-none-eabi",
-    "rust-analyzer.checkOnSave.allTargets": false,
+    "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.check.command": "check",
     "rust-analyzer.cargo.noDefaultFeatures": true,
     "rust-analyzer.cargo.features": [
-        "pico"
+        // "pico"
         // "sf2040"
-        // "kb2040",
+        "kb2040",
     ],
-    "rust-analyzer.checkOnSave.noDefaultFeatures": true,
-    "rust-analyzer.checkOnSave.features": [
-        "pico"
+    "rust-analyzer.check.noDefaultFeatures": true,
+    "rust-analyzer.check.features": [
+        // "pico"
         // "sf2040"
-        // "kb2040",
+        "kb2040",
     ],
     "editor.formatOnSave": true,
-    "rust-analyzer.inlayHints.enable": false
 }

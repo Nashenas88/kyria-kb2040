@@ -1,27 +1,72 @@
-use usbd_hid::descriptor::{MediaKey, MediaKeyboardReport};
+use usbd_human_interface_device::device::consumer::MultipleConsumerReport;
+use usbd_human_interface_device::page::Consumer;
 
 use crate::layout::CustomAction;
 
-pub(crate) fn report_for_action(action: CustomAction) -> MediaKeyboardReport {
+pub(crate) fn media_report_for_action(action: CustomAction) -> Option<MultipleConsumerReport> {
     let usage_id = match action {
-        CustomAction::MediaPlayPause => MediaKey::PlayPause.into(),
-        CustomAction::MediaNext => MediaKey::NextTrack.into(),
-        CustomAction::MediaBack => MediaKey::PrevTrack.into(),
-        CustomAction::MediaMute => MediaKey::Mute.into(),
-        CustomAction::MediaVolumeUp => MediaKey::VolumeIncrement.into(),
-        CustomAction::MediaVolumeDown => MediaKey::VolumeDecrement.into(),
-        _ => unreachable!(),
+        CustomAction::MediaPlayPause => Consumer::PlayPause,
+        CustomAction::MediaNext => Consumer::ScanNextTrack,
+        CustomAction::MediaBack => Consumer::ScanPreviousTrack,
+        CustomAction::MediaMute => Consumer::Mute,
+        CustomAction::MediaVolumeUp => Consumer::VolumeIncrement,
+        CustomAction::MediaVolumeDown => Consumer::VolumeDecrement,
+        _ => return None,
     };
 
-    MediaKeyboardReport { usage_id }
+    Some(MultipleConsumerReport {
+        codes: [
+            usage_id,
+            Consumer::Unassigned,
+            Consumer::Unassigned,
+            Consumer::Unassigned,
+        ],
+    })
 }
 
-pub(crate) fn release_for_action(action: CustomAction) -> Option<MediaKeyboardReport> {
+// #[gen_hid_descriptor(
+//     (collection = APPLICATION, usage_page = CONSUMER, usage = CONSUMER_CONTROL) = {
+//         (usage_page = CONSUMER,) = {
+//             (usage = 0xE0,) = {
+//                 #[item_settings data,variable,relative] volume=input;
+//             };
+//             // (usage = 0xE9,) = {
+//             //     #[item_settings data,variable,relative] volume_incr=input;
+//             // };
+//             // (usage = 0xEA,) = {
+//             //     #[item_settings data,variable,relative] volume_decr=input;
+//             // };
+//         };
+//     }
+// )]
+// pub(crate) struct ConsumerReport {
+//     pub volume: i8,
+// }
+
+// pub(crate) fn consumer_report_for_action(action: CustomAction) -> Option<ConsumerReport> {
+//     let volume = match action {
+//         CustomAction::MediaVolumeUp => 1,
+//         CustomAction::MediaVolumeDown => -1,
+//         _ => return None,
+//     };
+
+//     Some(ConsumerReport { volume })
+// }
+
+pub(crate) fn release_for_media_action(action: CustomAction) -> Option<MultipleConsumerReport> {
     if action.is_led() {
         None
     } else {
-        Some(MediaKeyboardReport {
-            usage_id: MediaKey::Zero.into(),
+        Some(MultipleConsumerReport {
+            codes: [Consumer::Unassigned; 4],
         })
     }
 }
+
+// pub(crate) fn release_for_consumer_action(action: CustomAction) -> Option<ConsumerReport> {
+//     if action.is_led() {
+//         None
+//     } else {
+//         Some(ConsumerReport { volume: 0 })
+//     }
+// }

@@ -7,7 +7,6 @@ use crate::fmt::Wrapper;
 use crate::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use crate::leds::UsualLeds;
 use crate::pins::get_pins;
-use crate::rotary::new_rotary_event;
 #[cfg(feature = "kb2040")]
 use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
@@ -20,15 +19,16 @@ use bsp::hal::gpio::bank0::{Gpio1, Gpio16, Gpio2, Gpio25, Gpio3};
 use bsp::hal::gpio::bank0::{Gpio18, Gpio19, Gpio20, Gpio21, Gpio25, Gpio28};
 #[cfg(any(feature = "kb2040", feature = "pico"))]
 use bsp::hal::gpio::PullUpInput;
-use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PushPullOutput};
+use bsp::hal::gpio::{DynPin, FunctionI2C, FunctionUart, Pin, PushPullOutput};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
 use bsp::hal::sio::SioFifo;
 use bsp::hal::timer::{Alarm, Timer};
+use bsp::hal::uart::{DataBits, Enabled, StopBits, UartConfig, UartPeripheral};
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
 use bsp::hal::{Clock, Sio, I2C};
-use bsp::pac::{I2C0, I2C1};
+use bsp::pac::{I2C0, I2C1, UART0};
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
 #[cfg(feature = "pico")]
@@ -43,15 +43,18 @@ use embedded_hal::digital::v2::InputPin;
 #[cfg(feature = "pico")]
 use embedded_hal::digital::v2::OutputPin;
 use embedded_hal::prelude::*;
-use embedded_time::duration::Extensions as _;
-use embedded_time::fixed_point::FixedPoint;
-use embedded_time::rate::Extensions as _;
+
+// use embedded_time::duration::Extensions as _;
+// use embedded_time::fixed_point::FixedPoint;
+// use embedded_time::rate::Extensions as _;
+use frunk::{HCons, HNil};
+use fugit::{ExtU32, RateExtU32};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
-#[cfg(any(feature = "kb2040", feature = "sf2040"))]
-use mock_defmt as defmt;
+use kyria_kb2040::log;
+use kyria_kb2040::rotary::update_last_rotary;
 #[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use panic_halt as _;
 #[cfg(feature = "pico")]
@@ -69,8 +72,8 @@ use ssd1306::Ssd1306;
 use tinybmp::Bmp;
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::UsbDeviceState;
-use usbd_hid::descriptor::{MediaKeyboardReport, SerializedDescriptor};
-use usbd_hid::hid_class::HIDClass;
+use usbd_human_interface_device::device::consumer::{ConsumerControl, MultipleConsumerReport};
+use usbd_human_interface_device::usb_class::{UsbHidClass, UsbHidClassBuilder};
 
 mod anim;
 mod core1;
@@ -80,7 +83,6 @@ mod leds;
 mod matrix;
 mod media;
 mod pins;
-mod rotary;
 mod ws2812;
 
 #[cfg(feature = "kb2040")]
@@ -108,6 +110,12 @@ type Display = Ssd1306<
     DisplaySize128x64,
     TerminalMode,
 >;
+#[cfg(feature = "kb2040")]
+type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio12, FunctionUart>, Pin<Gpio1, FunctionUart>)>;
+#[cfg(feature = "sf2040")]
+type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio16, FunctionUart>, Pin<Gpio1, FunctionUart>)>;
+#[cfg(feature = "pico")]
+type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio12, FunctionUart>, Pin<Gpio1, FunctionUart>)>;
 
 #[cfg(feature = "kb2040")]
 type I2CPeripheral =
@@ -137,7 +145,7 @@ const I2C_PERIPHERAL_ADDR: u8 = 0x56;
 const SCAN_TIME_US: u32 = 1000;
 const BOARD_MAX_KEYS: usize = 8;
 /// Number of scan cycles to wait before triggering rotary release event.
-const ROTARY_WAIT: u8 = 20;
+const ROTARY_WAIT: u8 = 1;
 
 pub enum Either<T, U> {
     Left(T),
@@ -175,6 +183,7 @@ static mut CORE1_STACK: Stack<4096> = Stack::new();
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
+
     use super::*;
 
     /// The number of times a switch needs to be in the same state for the
@@ -201,9 +210,16 @@ mod app {
                 keyberon::keyboard::Keyboard<UsualLeds>,
             >,
         >,
-        media_class: Option<HIDClass<'static, bsp::hal::usb::UsbBus>>,
+        media_class: Option<
+            UsbHidClass<
+                'static,
+                bsp::hal::usb::UsbBus,
+                HCons<ConsumerControl<'static, bsp::hal::usb::UsbBus>, HNil>,
+            >,
+        >,
         sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
+        // uart: Uart,
         rotary: RotaryEncoder,
         last_rotary: Option<(Event, u8)>,
         display: Display,
@@ -253,8 +269,8 @@ mod app {
         let core1 = &mut cores[1];
         let _test = core1.spawn(unsafe { &mut CORE1_STACK.mem }, crate::core1::core1_task);
         // Let core1 know how fast the system clock is running
-        let sys_freq = clocks.system_clock.freq().integer();
-        let peripheral_freq = clocks.peripheral_clock.freq().integer();
+        let sys_freq = clocks.system_clock.freq().to_Hz();
+        let peripheral_freq = clocks.peripheral_clock.freq().to_Hz();
         sio.fifo.write_blocking(sys_freq);
         sio.fifo.write_blocking(peripheral_freq);
 
@@ -277,6 +293,21 @@ mod app {
             Rotary::new(keyboard_pins.rotary2.into(), keyboard_pins.rotary1.into())
         };
         let _result = rotary.update();
+
+        // let uart = UartPeripheral::new(
+        //     c.device.UART0,
+        //     (
+        //         keyboard_pins.sda0.into_mode(),
+        //         keyboard_pins.scl0.into_mode(),
+        //     ),
+        //     &mut resets,
+        // );
+        // let uart = uart
+        //     .enable(
+        //         UartConfig::new(115_200.Hz(), DataBits::Eight, None, StopBits::One),
+        //         (&clocks.peripheral_clock).into(),
+        //     )
+        //     .unwrap();
 
         // Right functions as the I2C controller for communication between the halves and for USB.
         #[allow(unused_mut)]
@@ -392,7 +423,7 @@ mod app {
 
         // The alarm used to trigger the matrix scan.
         let mut alarm0 = timer.alarm_0().unwrap();
-        let _ = alarm0.schedule(SCAN_TIME_US.microseconds());
+        let _ = alarm0.schedule(SCAN_TIME_US.micros());
         alarm0.enable_interrupt();
 
         // The bus that is used to manage the device and class below.
@@ -415,11 +446,16 @@ mod app {
             is_right.then(|| keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, UsualLeds));
         // The class which specifies this device supports HID Media reports.
         let media_class = is_right.then(|| {
-            HIDClass::new(
-                unsafe { USB_BUS.as_ref().unwrap() },
-                MediaKeyboardReport::desc(),
-                60,
-            )
+            UsbHidClassBuilder::new()
+                .add_device(
+                    usbd_human_interface_device::device::consumer::ConsumerControlConfig::default(),
+                )
+                .build(unsafe { USB_BUS.as_ref().unwrap() })
+            // HIDClass::new(
+            //     unsafe { USB_BUS.as_ref().unwrap() },
+            //     MediaKeyboardReport::desc(),
+            //     60,
+            // )
         });
         // The device which represents the device to the system as being a "Keyberon"
         // keyboard.
@@ -432,7 +468,7 @@ mod app {
         }
 
         // Slower watchdog for debugging.
-        watchdog.start((2_000_000).microseconds());
+        watchdog.start((2_000_000).micros());
         // Start watchdog and feed it with the lowest priority task at 1000hz
         // watchdog.start(10_000.microseconds());
 
@@ -445,6 +481,7 @@ mod app {
                 media_class,
                 usb_dev,
                 display,
+                // uart,
                 i2c0,
                 timer,
                 alarm0,
@@ -506,15 +543,14 @@ mod app {
         let mut usb_dev = c.shared.usb_dev;
         let i2c0 = c.shared.i2c0;
         let sio_fifo = c.shared.sio_fifo;
-        let display = c.shared.display;
+        // let display = c.shared.display;
 
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
         if let Some(e) = event {
-            #[cfg(feature = "pico")]
             match e {
-                Event::Press(x, y) => defmt::info!("p {} {}", x, y),
-                Event::Release(x, y) => defmt::info!("r {} {}", x, y),
+                Event::Press(x, y) => log::info!("p {} {}", x, y),
+                Event::Release(x, y) => log::info!("r {} {}", x, y),
             };
             layout.lock(|l| l.event(e));
             return;
@@ -522,8 +558,8 @@ mod app {
 
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
-        let (report, media_report): (key_code::KbHidReport, Option<MediaKeyboardReport>) =
-            (layout, i2c0, sio_fifo, display).lock(|l, i2c, sf, d| {
+        let (report, media_report): (key_code::KbHidReport, Option<MultipleConsumerReport>) =
+            (layout, i2c0, sio_fifo /* , display */).lock(|l, i2c, sf /* , d */| {
                 let media_report = match l.tick() {
                     keyberon::layout::CustomEvent::Press(&custom_action) => {
                         if custom_action.is_led() {
@@ -560,11 +596,11 @@ mod app {
                             //     d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
                             None
                         } else {
-                            Some(media::report_for_action(custom_action))
+                            media::media_report_for_action(custom_action)
                         }
                     }
                     keyberon::layout::CustomEvent::Release(&custom_action) => {
-                        media::release_for_action(custom_action)
+                        media::release_for_media_action(custom_action)
                     }
                     _ => None, // no-op for no-event
                 };
@@ -597,7 +633,10 @@ mod app {
         }
 
         if let Some(media_report) = media_report {
-            while let Ok(0) = media_class.lock(|m| m.as_mut().unwrap().push_input(&media_report)) {}
+            while let Ok(0) =
+                media_class.lock(|m| m.as_mut().unwrap().device().write_report(&media_report))
+            {
+            }
         }
     }
 
@@ -637,7 +676,7 @@ mod app {
         // Immediately clear the interrupt and schedule the next scan alarm0.
         alarm0.lock(|a| {
             a.clear_interrupt();
-            let _ = a.schedule(SCAN_TIME_US.microseconds());
+            let _ = a.schedule(SCAN_TIME_US.micros());
         });
 
         // Feed the watchdog so it knows we haven't frozen/crashed.
@@ -671,7 +710,7 @@ mod app {
                         i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
                         Ok(buf)
                     } else {
-                        defmt::unreachable!()
+                        log::unreachable!()
                     }
                 },
             );
@@ -702,27 +741,9 @@ mod app {
                 handle_event::spawn(Some(event)).unwrap();
             }
 
-            if let Some((event, counter)) = last_rotary.lock(|l| l.take()) {
-                if counter < ROTARY_WAIT {
-                    last_rotary.lock(|l| *l = Some((event, counter + 1)));
-                } else {
-                    match event {
-                        Event::Press(x, y) => {
-                            handle_event::spawn(Some(Event::Release(x, y))).unwrap()
-                        }
-                        Event::Release(..) => defmt::unreachable!(),
-                    }
-                }
-            }
-
-            let rotary_event = match rotary_update {
-                Direction::Clockwise => new_rotary_event(Event::Press(3, 14)),
-                Direction::CounterClockwise => new_rotary_event(Event::Press(3, 12)),
-                Direction::None => None,
-            };
-            last_rotary.lock(|l| *l = rotary_event);
-            if let Some((rotary_event, _)) = rotary_event {
-                defmt::info!("spawning rotary event");
+            if let Some(rotary_event) =
+                last_rotary.lock(|l| update_last_rotary::<ROTARY_WAIT>(l, rotary_update, 14, 12))
+            {
                 handle_event::spawn(Some(rotary_event)).unwrap();
             }
 
@@ -741,27 +762,9 @@ mod app {
                 last = i;
             }
 
-            if let Some((event, counter)) = last_rotary.lock(|l| l.take()) {
-                if counter < ROTARY_WAIT {
-                    last_rotary.lock(|l| *l = Some((event, counter + 1)));
-                } else {
-                    match event {
-                        Event::Press(x, y) => {
-                            es[last] = Some(Event::Release(x, y));
-                            last += 1;
-                        }
-                        Event::Release(..) => defmt::unreachable!(),
-                    }
-                }
-            }
-
-            let rotary_event = match rotary_update {
-                Direction::Clockwise => new_rotary_event(Event::Press(3, 3)),
-                Direction::CounterClockwise => new_rotary_event(Event::Press(3, 1)),
-                Direction::None => None,
-            };
-            last_rotary.lock(|l| *l = rotary_event);
-            if let Some((rotary_event, _)) = rotary_event {
+            if let Some(rotary_event) =
+                last_rotary.lock(|l| update_last_rotary::<ROTARY_WAIT>(l, rotary_update, 3, 1))
+            {
                 es[last] = Some(rotary_event);
                 last += 1;
             }
@@ -854,7 +857,7 @@ mod app {
                                 //         core::str::from_utf8_unchecked(&buf[..written])
                                 //     })
                                 // });
-                                defmt::info!("set_ui {} {}", layer, read);
+                                log::info!("set_ui {} {}", layer, read);
                             }
                             [layer, _] => {
                                 if set_ui {
@@ -870,7 +873,7 @@ mod app {
                                     //         core::str::from_utf8_unchecked(&buf[..written])
                                     //     })
                                     // });
-                                    defmt::info!("set_ui {}", layer);
+                                    log::info!("set_ui {}", layer);
                                 }
                             }
                         }

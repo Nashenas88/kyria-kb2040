@@ -11,10 +11,8 @@ cortex-m = "0.7.4"
 cortex-m-rt = "0.7.1"
 cortex-m-rtic = "1.1.2"
 embedded-hal = { version = "0.2.7", features = ["unproven"] }
-embedded-time = "0.12.1"
 
 defmt = { version = "0.3.1", optional = true }
-mock_defmt = { path="./mock_defmt", optional = true }
 defmt-rtt = { version = "0.3.2", optional = true }
 panic-halt = { version = "0.2.0", optional = true }
 panic-probe = { version = "0.3.0", features = ["print-defmt"], optional = true }
@@ -22,7 +20,9 @@ panic-probe = { version = "0.3.0", features = ["print-defmt"], optional = true }
 usb-device= "0.2.8"
 usbd-serial = "0.1.1"
 # usbd-hid = "0.6.0"
-usbd-hid = { git = "https://github.com/twitchyliquid64/usbd-hid", rev = "d0a80008476d74ef2017908ce256dc56bfc396b1" }
+# usbd-hid = { git = "https://github.com/twitchyliquid64/usbd-hid", rev = "71632dea0209afadc1dfb1b401d45376c32ba511" }
+usbd-human-interface-device = "0.4.2"
+frunk = { version = "0.4.1", default-features = false }
 
 # Led support
 smart-leds = "0.3.0"
@@ -43,6 +43,7 @@ rp-pico = { path = "../rp-hal/boards/rp-pico", optional = true }
 # keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "58ac73cfcd09659bf31ee405ff9f5e23b0edc527" }
 # keyberon = { git = "https://github.com/nashenas88/keyberon", rev = "e0d6c165260e2d2f6d028c9d7b928e2b23183aaa" }
 keyberon = { path = "../keyberon" }
+fugit = "0.3.6"
 
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7.1"
@@ -52,9 +53,10 @@ arraydeque = { version = "0.4.5", default-features = false }
 
 [features]
 "default" = ["kb2040"]
-"kb2040" = ["adafruit-kb2040", "panic-halt", "mock_defmt"]
-"sf2040" = ["sparkfun-pro-micro-rp2040", "panic-halt", "mock_defmt"]
-"pico" = ["rp-pico", "defmt", "defmt-rtt", "panic-probe"]
+"kb2040" = ["adafruit-kb2040", "panic-halt"]
+"sf2040" = ["sparkfun-pro-micro-rp2040", "panic-halt"]
+"pico" = ["rp-pico", "defmt", "panic-probe"]
+"defmt" = ["dep:defmt", "defmt-rtt"]
 
 # cargo build/run
 [profile.dev]

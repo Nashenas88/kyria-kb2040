@@ -7,7 +7,6 @@
 
 use crate::bsp::hal::gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode};
 use crate::bsp::hal::pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO};
-use embedded_time::fixed_point::FixedPoint;
 use pio::Program;
 use smart_leds::{SmartLedsWrite, RGB8};
 
@@ -34,7 +33,7 @@ where
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
-        clock_freq: embedded_time::rate::Hertz,
+        clock_freq: fugit::HertzU32,
     ) -> Ws2812<P, SM, I> {
         // prepare the PIO program
         let side_set = pio::SideSet::new(false, 1, false);
@@ -66,7 +65,7 @@ where
         let installed = pio.install(&program).unwrap();
 
         // Configure the PIO state machine.
-        let div = clock_freq.integer() as f32 / (FREQ as f32 * CYCLES_PER_BIT as f32);
+        let div = clock_freq.to_Hz() as f32 / (FREQ as f32 * CYCLES_PER_BIT as f32);
 
         let (mut sm, _, tx) = crate::bsp::hal::pio::PIOBuilder::from_program(installed)
             // only use TX FIFO

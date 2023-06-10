@@ -4,7 +4,7 @@ use crate::bsp::hal::Sio;
 use crate::bsp::pac::{CorePeripherals, Peripherals};
 use crate::layout::CustomAction;
 use crate::ws2812::Ws2812;
-use embedded_time::rate::Hertz;
+use fugit::RateExtU32;
 use smart_leds::brightness;
 
 const LED_ANIM_TIME_US: u32 = 3_000;
@@ -33,7 +33,7 @@ pub(crate) fn core1_task() -> ! {
 
     let rgb = crate::pins::core1_pins(pins);
     let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
-    let peripheral_freq = Hertz::new(peripheral_freq);
+    let peripheral_freq = peripheral_freq.Hz();
     let mut ws = Ws2812::new(rgb.into_mode(), &mut pio, sm0, peripheral_freq);
     let mut anim_controller = AnimationController::new();
 
