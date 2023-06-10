@@ -1,4 +1,3 @@
-use crate::log;
 use keyberon::layout::Event;
 
 const EVENT_BIT_MASK: u8 = 0b1000_0000;

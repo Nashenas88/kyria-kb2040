@@ -65,7 +65,7 @@ where
         let installed = pio.install(&program).unwrap();
 
         // Configure the PIO state machine.
-        let div = clock_freq.to_Hz() as f32 / (FREQ as f32 * CYCLES_PER_BIT as f32);
+        let div = clock_freq.to_Hz() / (FREQ * CYCLES_PER_BIT);
 
         let (mut sm, _, tx) = crate::bsp::hal::pio::PIOBuilder::from_program(installed)
             // only use TX FIFO
@@ -76,7 +76,7 @@ where
             .out_shift_direction(crate::bsp::hal::pio::ShiftDirection::Left)
             .autopull(true)
             .pull_threshold(24)
-            .clock_divisor(div)
+            .clock_divisor_fixed_point(div as u16, 0)
             .build(sm);
 
         // Prepare pin's direction.
