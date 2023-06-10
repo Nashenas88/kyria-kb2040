@@ -53,8 +53,8 @@ use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
-use kyria_kb2040::log;
 use kyria_kb2040::rotary::update_last_rotary;
+use kyria_kb2040::{cross_talk, log};
 #[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use panic_halt as _;
 #[cfg(feature = "pico")]
@@ -189,13 +189,6 @@ mod app {
     /// The number of times a switch needs to be in the same state for the
     /// debouncer to consider it a press.
     const DEBOUNCER_MIN_STATE_COUNT: u16 = 30;
-
-    const PRESSED_BIT_MASK: u8 = 0b0100_0000;
-    const PRESSED_SHIFT: u8 = 6;
-    const ROW_BIT_MASK: u8 = 0b0011_1000;
-    const ROW_SHIFT: u8 = 3;
-    const COL_BIT_MASK: u8 = 0b0000_0111;
-    const COL_SHIFT: u8 = 0;
 
     const NCOL_PINS: usize = 8;
     static mut USB_BUS: Option<usb_device::bus::UsbBusAllocator<bsp::hal::usb::UsbBus>> = None;
@@ -719,21 +712,10 @@ mod app {
 
             if let Ok(data) = data {
                 for d in data {
-                    // Zeros indicate no key event.
-                    if d == 0 {
-                        break;
+                    let event = cross_talk::deserialize(d);
+                    if event.is_some() {
+                        handle_event::spawn(event).unwrap();
                     }
-
-                    let i = (d & ROW_BIT_MASK) >> ROW_SHIFT;
-                    let j = (d & COL_BIT_MASK) >> COL_SHIFT;
-                    let is_pressed = (d & PRESSED_BIT_MASK) > 0;
-
-                    handle_event::spawn(Some(if is_pressed {
-                        Event::Press(i, j)
-                    } else {
-                        Event::Release(i, j)
-                    }))
-                    .unwrap();
                 }
             }
 
@@ -770,18 +752,10 @@ mod app {
             }
 
             let stop_index = last + 1;
-            let mut byte: u8;
             for e in es.iter().take(stop_index).flatten() {
-                let (i, j) = e.coord();
-                // 7 is the max value we can encode, and the highest row/col count on this board
-                if i > 7 || j > 7 {
+                let Some(byte) = cross_talk::serialize(*e) else {
                     continue;
-                }
-
-                byte = (j << COL_SHIFT) & COL_BIT_MASK;
-                byte |= (i << ROW_SHIFT) & ROW_BIT_MASK;
-                byte |= (e.is_press() as u8) << PRESSED_SHIFT;
-
+                };
                 scanned_events.lock(
                     |s: &mut ArrayDeque<[u8; BOARD_MAX_KEYS], behavior::Wrapping>| {
                         let _ = s.push_back(byte);
@@ -834,7 +808,6 @@ mod app {
                         }
                     }
                     I2CEvent::TransferWrite => {
-                        if set_ui {}
                         let mut command = [0u8; 2];
                         let read = i2c.read(&mut command);
                         match command {
