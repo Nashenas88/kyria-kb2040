@@ -4,7 +4,6 @@
 #![no_main]
 
 use crate::fmt::Wrapper;
-use crate::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use crate::leds::UsualLeds;
 use crate::pins::get_pins;
 #[cfg(feature = "kb2040")]
@@ -43,18 +42,15 @@ use embedded_hal::digital::v2::InputPin;
 #[cfg(feature = "pico")]
 use embedded_hal::digital::v2::OutputPin;
 use embedded_hal::prelude::*;
-
-// use embedded_time::duration::Extensions as _;
-// use embedded_time::fixed_point::FixedPoint;
-// use embedded_time::rate::Extensions as _;
 use frunk::{HCons, HNil};
 use fugit::{ExtU32, RateExtU32};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
+use kyria_kb2040::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use kyria_kb2040::rotary::update_last_rotary;
-use kyria_kb2040::{cross_talk, log};
+use kyria_kb2040::{cross_talk, log, media};
 #[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use panic_halt as _;
 #[cfg(feature = "pico")]
@@ -78,10 +74,8 @@ use usbd_human_interface_device::usb_class::{UsbHidClass, UsbHidClassBuilder};
 mod anim;
 mod core1;
 mod fmt;
-mod layout;
 mod leds;
 mod matrix;
-mod media;
 mod pins;
 mod ws2812;
 
@@ -210,6 +204,7 @@ mod app {
                 HCons<ConsumerControl<'static, bsp::hal::usb::UsbBus>, HNil>,
             >,
         >,
+        media_report: MultipleConsumerReport,
         sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
         // uart: Uart,
@@ -402,8 +397,9 @@ mod app {
             .unwrap();
 
         // Load the defined layout which is used later to map the matrix to specific keycodes.
-        let layout =
-            Layout::<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>::new(&layout::LAYERS);
+        let layout = Layout::<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>::new(
+            &kyria_kb2040::layout::LAYERS,
+        );
         // The debouncer prevents very tiny bounces from being registered as multiple switch
         // presses.
         let debouncer: keyberon::debounce::Debouncer<
@@ -472,6 +468,7 @@ mod app {
                 last_rotary: None,
                 keyboard_class,
                 media_class,
+                media_report: MultipleConsumerReport::default(),
                 usb_dev,
                 display,
                 // uart,
@@ -527,13 +524,14 @@ mod app {
     #[task(
         priority = 2,
         capacity = 8,
-        shared = [usb_dev, display, keyboard_class, media_class, i2c0, layout, rotary, sio_fifo],
+        shared = [usb_dev, display, keyboard_class, media_class, media_report, i2c0, layout, rotary, sio_fifo],
     )]
     fn handle_event(c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         let mut layout = c.shared.layout;
         let mut keyboard_class = c.shared.keyboard_class;
         let mut media_class = c.shared.media_class;
         let mut usb_dev = c.shared.usb_dev;
+        let mut last_media_report = c.shared.media_report;
         let i2c0 = c.shared.i2c0;
         let sio_fifo = c.shared.sio_fifo;
         // let display = c.shared.display;
@@ -589,11 +587,17 @@ mod app {
                             //     d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
                             None
                         } else {
+                            sf.write_blocking(u8::from(CustomAction::ColemakLed) as u32);
                             media::media_report_for_action(custom_action)
                         }
                     }
                     keyberon::layout::CustomEvent::Release(&custom_action) => {
-                        media::release_for_media_action(custom_action)
+                        if custom_action.is_led() {
+                            None
+                        } else {
+                            sf.write_blocking(u8::from(CustomAction::QwertyLed) as u32);
+                            Some(media::release_for_media_action())
+                        }
                     }
                     _ => None, // no-op for no-event
                 };
@@ -609,7 +613,21 @@ mod app {
                 .device_mut()
                 .set_keyboard_report(report.clone())
         });
-        if !was_report_modified && media_report.is_none() {
+        let media_report_modified = {
+            if let Some(media_report) = media_report {
+                last_media_report.lock(|l| {
+                    if *l == media_report {
+                        false
+                    } else {
+                        *l = media_report;
+                        true
+                    }
+                })
+            } else {
+                false
+            }
+        };
+        if !(was_report_modified || media_report_modified) {
             return;
         }
 
@@ -625,11 +643,18 @@ mod app {
             }
         }
 
-        if let Some(media_report) = media_report {
-            while let Ok(0) =
-                media_class.lock(|m| m.as_mut().unwrap().device().write_report(&media_report))
-            {
-            }
+        if media_report_modified {
+            let mut locker = (last_media_report, media_class);
+            // Watchdog will prevent the keyboard from getting stuck in this loop.
+            while let Ok(0) = locker.lock(|l, m| {
+                m.as_mut().unwrap().device().write_report(l).or_else(|e| {
+                    if let usb_device::UsbError::WouldBlock = e {
+                        Ok(0)
+                    } else {
+                        Err(e)
+                    }
+                })
+            }) {}
         }
     }
 

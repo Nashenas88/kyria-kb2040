@@ -1,8 +1,9 @@
 use keyberon::action::{self, d, l};
 use keyberon::key_code::KeyCode;
 
+// TODO: split into media, led variants and new enums.
 #[allow(clippy::enum_variant_names)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CustomAction {
     QwertyLed,
     ColemakLed,
@@ -19,7 +20,7 @@ pub enum CustomAction {
 }
 
 impl CustomAction {
-    pub(crate) fn is_led(&self) -> bool {
+    pub fn is_led(&self) -> bool {
         match self {
             CustomAction::QwertyLed
             | CustomAction::ColemakLed
@@ -88,14 +89,16 @@ const VU: Action = Action::Custom(CustomAction::MediaVolumeUp);
 const VD: Action = Action::Custom(CustomAction::MediaVolumeDown);
 
 /// The number of columns on the keyboard.
-pub(crate) const NCOLS: usize = 16;
+pub const NCOLS: usize = 16;
 
 /// The number of rows on the keyboard.
-pub(crate) const NROWS: usize = 4;
+pub const NROWS: usize = 4;
 
-pub(crate) const NLAYERS: usize = 6;
+pub const NLAYERS: usize = 6;
 
-pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction> = {
+pub type Layout = keyberon::layout::Layout<NCOLS, NROWS, NLAYERS, CustomAction>;
+
+pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction> = {
     use keyberon::action::{k, m};
     use keyberon::key_code::KeyCode::{
         Equal, Kb9, LAlt, LBracket, LCtrl, LGui, LShift, Minus, Quote, RAlt, RCtrl, RGui, RShift,
@@ -211,3 +214,6 @@ pub(crate) static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, Custom
         }
     }
 };
+
+#[cfg(test)]
+mod layout_tests;

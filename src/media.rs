@@ -1,9 +1,8 @@
+use crate::layout::CustomAction;
 use usbd_human_interface_device::device::consumer::MultipleConsumerReport;
 use usbd_human_interface_device::page::Consumer;
 
-use crate::layout::CustomAction;
-
-pub(crate) fn media_report_for_action(action: CustomAction) -> Option<MultipleConsumerReport> {
+pub fn media_report_for_action(action: CustomAction) -> Option<MultipleConsumerReport> {
     let usage_id = match action {
         CustomAction::MediaPlayPause => Consumer::PlayPause,
         CustomAction::MediaNext => Consumer::ScanNextTrack,
@@ -53,13 +52,9 @@ pub(crate) fn media_report_for_action(action: CustomAction) -> Option<MultipleCo
 //     Some(ConsumerReport { volume })
 // }
 
-pub(crate) fn release_for_media_action(action: CustomAction) -> Option<MultipleConsumerReport> {
-    if action.is_led() {
-        None
-    } else {
-        Some(MultipleConsumerReport {
-            codes: [Consumer::Unassigned; 4],
-        })
+pub fn release_for_media_action() -> MultipleConsumerReport {
+    MultipleConsumerReport {
+        codes: [Consumer::Unassigned; 4],
     }
 }
 
@@ -70,3 +65,6 @@ pub(crate) fn release_for_media_action(action: CustomAction) -> Option<MultipleC
 //         Some(ConsumerReport { volume: 0 })
 //     }
 // }
+
+#[cfg(test)]
+mod media_tests;
