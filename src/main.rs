@@ -70,7 +70,6 @@ use usbd_hid::hid_class::HIDClass;
 
 mod core1;
 mod pins;
-mod ws2812;
 
 #[cfg(feature = "kb2040")]
 type I2C0Controller = I2C<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;

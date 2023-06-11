@@ -25,8 +25,7 @@ usbd-hid = { git = "https://github.com/twitchyliquid64/usbd-hid", rev = "71632de
 
 # Led support
 smart-leds = "0.3.0"
-# This revision supports rp2040 version 0.4.0.
-# ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "b126e70c23e192896caa38aa1a54d4877745fb1f" }
+ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "0b0dbb035e220954300475784ac6fe3ab7f4ab9b" }
 nb = "1.0.0"
 pio = "0.2.0"
 

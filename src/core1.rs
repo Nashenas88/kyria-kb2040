@@ -1,11 +1,11 @@
 use crate::bsp::hal::pio::PIOExt;
 use crate::bsp::hal::Sio;
 use crate::bsp::pac::{CorePeripherals, Peripherals};
-use crate::ws2812::Ws2812;
 use fugit::RateExtU32;
 use kyria_kb2040::anim::{AnimState, AnimationController};
 use kyria_kb2040::layout::CustomAction;
 use smart_leds::brightness;
+use ws2812_pio::Ws2812Direct;
 
 const LED_ANIM_TIME_US: u32 = 3_000;
 const CORE1_LOOP_US: u32 = 1_000;
@@ -34,7 +34,7 @@ pub(crate) fn core1_task() -> ! {
     let rgb = crate::pins::core1_pins(pins);
     let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
     let peripheral_freq = peripheral_freq.Hz();
-    let mut ws = Ws2812::new(rgb.into_mode(), &mut pio, sm0, peripheral_freq);
+    let mut ws = Ws2812Direct::new(rgb.into_mode(), &mut pio, sm0, peripheral_freq);
     let mut anim_controller = AnimationController::new();
 
     let mut counter = 0;
