@@ -40,9 +40,7 @@ sparkfun-pro-micro-rp2040 = { path = "../rp-hal/boards/sparkfun-pro-micro-rp2040
 rp-pico = { path = "../rp-hal/boards/rp-pico", optional = true }
 
 # This revision supports hold tap, easier to use.
-# keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "58ac73cfcd09659bf31ee405ff9f5e23b0edc527" }
-# keyberon = { git = "https://github.com/nashenas88/keyberon", rev = "e0d6c165260e2d2f6d028c9d7b928e2b23183aaa" }
-keyberon = { path = "../keyberon" }
+keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "24bd53f850bb5f07b1eee36fe3ac75082d439c10" }
 fugit = "0.3.6"
 
 ssd1306 = "0.8.0"

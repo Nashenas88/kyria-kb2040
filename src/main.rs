@@ -43,7 +43,7 @@ use fugit::{ExtU32, RateExtU32};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
-use keyberon::matrix::PressedKeys;
+use keyberon::matrix::Matrix;
 use kyria_kb2040::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use kyria_kb2040::leds::UsualLeds;
 use kyria_kb2040::rotary::update_last_rotary;
@@ -69,7 +69,6 @@ use usbd_hid::descriptor::{MediaKey, MediaKeyboardReport, SerializedDescriptor};
 use usbd_hid::hid_class::HIDClass;
 
 mod core1;
-mod matrix;
 mod pins;
 mod ws2812;
 
@@ -119,6 +118,9 @@ type BootButton = Pin<Gpio11, PullUpInput>;
 type BootButton = ();
 #[cfg(feature = "pico")]
 type BootButton = Pin<Gpio28, PullUpInput>;
+
+const NCOL_PINS: usize = 8;
+type PressedKeys = [[bool; NCOL_PINS]; NROWS];
 
 const I2C_PERIPHERAL_ADDR: u8 = 0x56;
 
@@ -172,7 +174,6 @@ mod app {
     /// debouncer to consider it a press.
     const DEBOUNCER_MIN_STATE_COUNT: u16 = 30;
 
-    const NCOL_PINS: usize = 8;
     static mut USB_BUS: Option<usb_device::bus::UsbBusAllocator<bsp::hal::usb::UsbBus>> = None;
 
     #[shared]
@@ -197,10 +198,10 @@ mod app {
         #[lock_free]
         watchdog: bsp::hal::watchdog::Watchdog,
         #[lock_free]
-        matrix: matrix::Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }>,
+        matrix: Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }>,
         layout: Layout<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>,
         #[lock_free]
-        debouncer: Debouncer<PressedKeys<{ NCOL_PINS }, { NROWS }>>,
+        debouncer: Debouncer<PressedKeys>,
         transform: fn(keyberon::layout::Event) -> keyberon::layout::Event,
         is_right: bool,
         scanned_events: ScannedKeys,
@@ -339,9 +340,9 @@ mod app {
 
         // Build the matrix that will inform which specific combinations of row and col switches
         // are being pressed.
-        let matrix: matrix::Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }> =
+        let matrix: Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }> =
             cortex_m::interrupt::free(move |_cs| {
-                matrix::Matrix::new(
+                Matrix::new(
                     [
                         keyboard_pins.col0,
                         keyboard_pins.col1,
@@ -368,9 +369,7 @@ mod app {
         );
         // The debouncer prevents very tiny bounces from being registered as multiple switch
         // presses.
-        let debouncer: keyberon::debounce::Debouncer<
-            keyberon::matrix::PressedKeys<NCOL_PINS, NROWS>,
-        > = Debouncer::new(
+        let debouncer: Debouncer<PressedKeys> = Debouncer::new(
             PressedKeys::default(),
             PressedKeys::default(),
             DEBOUNCER_MIN_STATE_COUNT,
@@ -657,7 +656,7 @@ mod app {
 
         // Get debounced, pressed keys.
         let matrix = c.shared.matrix;
-        let keys_pressed = matrix.get().unwrap();
+        let keys_pressed = matrix.get_with_delay(|| cortex_m::asm::delay(100)).unwrap();
         let deb_events = c
             .shared
             .debouncer
