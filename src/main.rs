@@ -111,7 +111,7 @@ type I2CPeripheral =
 
 type I2CController = I2C0Controller;
 type RotaryEncoder = Rotary<DynPin, DynPin>;
-type ScannedKeys = ArrayDeque<[u8; BOARD_MAX_KEYS], behavior::Wrapping>;
+type ScannedKeys = ArrayDeque<u8, BOARD_MAX_KEYS, behavior::Wrapping>;
 
 #[cfg(feature = "kb2040")]
 type BootButton = Pin<Gpio11, PullUpInput>;
@@ -737,7 +737,7 @@ mod app {
                     continue;
                 };
                 scanned_events.lock(
-                    |s: &mut ArrayDeque<[u8; BOARD_MAX_KEYS], behavior::Wrapping>| {
+                    |s: &mut ArrayDeque<u8, BOARD_MAX_KEYS, behavior::Wrapping>| {
                         let _ = s.push_back(byte);
                     },
                 );
