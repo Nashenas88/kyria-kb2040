@@ -1,26 +1,21 @@
 use crate::layout::CustomAction;
-use usbd_human_interface_device::device::consumer::MultipleConsumerReport;
-use usbd_human_interface_device::page::Consumer;
+use usbd_hid::descriptor::{MediaKey, MediaKeyboardReport};
+// use usbd_human_interface_device::device::consumer::MultipleConsumerReport;
+// use usbd_human_interface_device::page::Consumer;
 
-pub fn media_report_for_action(action: CustomAction) -> Option<MultipleConsumerReport> {
+pub fn media_report_for_action(action: CustomAction) -> Option<MediaKeyboardReport> {
     let usage_id = match action {
-        CustomAction::MediaPlayPause => Consumer::PlayPause,
-        CustomAction::MediaNext => Consumer::ScanNextTrack,
-        CustomAction::MediaBack => Consumer::ScanPreviousTrack,
-        CustomAction::MediaMute => Consumer::Mute,
-        CustomAction::MediaVolumeUp => Consumer::VolumeIncrement,
-        CustomAction::MediaVolumeDown => Consumer::VolumeDecrement,
+        CustomAction::MediaPlayPause => MediaKey::PlayPause,
+        CustomAction::MediaNext => MediaKey::NextTrack,
+        CustomAction::MediaBack => MediaKey::PrevTrack,
+        CustomAction::MediaMute => MediaKey::Mute,
+        CustomAction::MediaVolumeUp => MediaKey::VolumeIncrement,
+        CustomAction::MediaVolumeDown => MediaKey::VolumeDecrement,
         _ => return None,
-    };
+    }
+    .into();
 
-    Some(MultipleConsumerReport {
-        codes: [
-            usage_id,
-            Consumer::Unassigned,
-            Consumer::Unassigned,
-            Consumer::Unassigned,
-        ],
-    })
+    Some(MediaKeyboardReport { usage_id })
 }
 
 // #[gen_hid_descriptor(
@@ -52,9 +47,9 @@ pub fn media_report_for_action(action: CustomAction) -> Option<MultipleConsumerR
 //     Some(ConsumerReport { volume })
 // }
 
-pub fn release_for_media_action() -> MultipleConsumerReport {
-    MultipleConsumerReport {
-        codes: [Consumer::Unassigned; 4],
+pub fn release_for_media_action() -> MediaKeyboardReport {
+    MediaKeyboardReport {
+        usage_id: MediaKey::Zero.into(),
     }
 }
 

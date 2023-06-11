@@ -1,13 +1,13 @@
-use usbd_human_interface_device::page::Consumer;
-
-use crate::layout::LAYERS;
+use crate::layout::{CustomAction, LAYERS};
+use assert_matches::assert_matches;
+use usbd_hid::descriptor::MediaKey;
 
 use super::*;
 
 struct MockEventHandler {
     report: KbHidReport,
     written_report: Option<KbHidReport>,
-    written_media_report: Option<MultipleConsumerReport>,
+    written_media_report: Option<MediaKeyboardReport>,
     serialized: Option<CustomAction>,
 }
 
@@ -42,7 +42,7 @@ impl EventHandler for MockEventHandler {
         self.written_report = Some(report);
     }
 
-    fn write_media_report(&mut self, report: MultipleConsumerReport) {
+    fn write_media_report(&mut self, report: MediaKeyboardReport) {
         self.written_media_report = Some(report);
     }
 
@@ -62,47 +62,42 @@ fn test_rotary() {
     let mut handler = Handler {
         event_handler,
         layout,
-        last_media_report: MultipleConsumerReport::default(),
+        last_media_report: MediaKeyboardReport {
+            usage_id: MediaKey::Zero.into(),
+        },
     };
 
     handler.handle_event(Some(Event::Press(3, 14)));
     assert_eq!(handler.event_handler.written_report, None);
-    assert_eq!(handler.event_handler.written_media_report, None);
+    assert_matches!(handler.event_handler.written_media_report, None);
     assert_eq!(handler.event_handler.serialized, None);
 
     handler.handle_event(None);
     assert_eq!(handler.event_handler.written_report, None);
-    assert_eq!(
-        handler.event_handler.written_media_report,
-        Some(MultipleConsumerReport {
-            codes: [
-                Consumer::VolumeIncrement,
-                Consumer::Unassigned,
-                Consumer::Unassigned,
-                Consumer::Unassigned
-            ]
-        })
-    );
+    if let Some(MediaKeyboardReport { usage_id }) =
+        handler.event_handler.written_media_report.take()
+    {
+        assert_eq!(usage_id, MediaKey::VolumeIncrement.into());
+    } else {
+        panic!("Expected MediaKeyboardReport");
+    }
+
     assert_eq!(handler.event_handler.serialized, None);
     handler.event_handler.clear();
 
     handler.handle_event(Some(Event::Release(3, 14)));
     assert_eq!(handler.event_handler.written_report, None);
-    assert_eq!(handler.event_handler.written_media_report, None);
+    assert_matches!(handler.event_handler.written_media_report, None);
     assert_eq!(handler.event_handler.serialized, None);
 
     handler.handle_event(None);
     assert_eq!(handler.event_handler.written_report, None);
-    assert_eq!(
-        handler.event_handler.written_media_report,
-        Some(MultipleConsumerReport {
-            codes: [
-                Consumer::Unassigned,
-                Consumer::Unassigned,
-                Consumer::Unassigned,
-                Consumer::Unassigned
-            ]
-        })
-    );
+    if let Some(MediaKeyboardReport { usage_id }) =
+        handler.event_handler.written_media_report.take()
+    {
+        assert_eq!(usage_id, MediaKey::Zero.into());
+    } else {
+        panic!("Expected MediaKeyboardReport");
+    }
     assert_eq!(handler.event_handler.serialized, None);
 }

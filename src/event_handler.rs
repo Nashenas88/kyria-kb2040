@@ -1,14 +1,14 @@
-use crate::layout::{CustomAction, Layout};
+use crate::layout::Layout;
 use keyberon::key_code::{self, KbHidReport};
 use keyberon::layout::Event;
-use usbd_human_interface_device::device::consumer::MultipleConsumerReport;
+use usbd_hid::descriptor::MediaKeyboardReport;
 
 use crate::{log, media};
 
 pub trait EventHandler {
     fn set_keyboard_report(&mut self, report: KbHidReport) -> bool;
     fn write_keyboard_report(&mut self, report: KbHidReport);
-    fn write_media_report(&mut self, report: MultipleConsumerReport);
+    fn write_media_report(&mut self, report: MediaKeyboardReport);
     fn write_ui(&mut self, serialized: u8);
     fn usb_configured(&self) -> bool;
 }
@@ -16,7 +16,7 @@ pub trait EventHandler {
 struct Handler<T> {
     event_handler: T,
     layout: Layout,
-    last_media_report: MultipleConsumerReport,
+    last_media_report: MediaKeyboardReport,
 }
 
 impl<T> Handler<T>
@@ -40,7 +40,7 @@ where
 
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
-        let (report, media_report): (key_code::KbHidReport, Option<MultipleConsumerReport>) = {
+        let (report, media_report): (key_code::KbHidReport, Option<MediaKeyboardReport>) = {
             let media_report = match self.layout.tick() {
                 keyberon::layout::CustomEvent::Press(&custom_action) => {
                     if custom_action.is_led() {
@@ -67,7 +67,7 @@ where
         let was_report_modified = self.event_handler.set_keyboard_report(report.clone());
         let media_report_modified = {
             if let Some(media_report) = media_report {
-                if self.last_media_report == media_report {
+                if self.last_media_report.usage_id == media_report.usage_id {
                     false
                 } else {
                     self.last_media_report = media_report;

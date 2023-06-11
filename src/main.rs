@@ -3,8 +3,6 @@
 #![no_std]
 #![no_main]
 
-use crate::fmt::Wrapper;
-use crate::leds::UsualLeds;
 use crate::pins::get_pins;
 #[cfg(feature = "kb2040")]
 use adafruit_kb2040 as bsp;
@@ -18,16 +16,15 @@ use bsp::hal::gpio::bank0::{Gpio1, Gpio16, Gpio2, Gpio25, Gpio3};
 use bsp::hal::gpio::bank0::{Gpio18, Gpio19, Gpio20, Gpio21, Gpio25, Gpio28};
 #[cfg(any(feature = "kb2040", feature = "pico"))]
 use bsp::hal::gpio::PullUpInput;
-use bsp::hal::gpio::{DynPin, FunctionI2C, FunctionUart, Pin, PushPullOutput};
+use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PushPullOutput};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
 use bsp::hal::sio::SioFifo;
 use bsp::hal::timer::{Alarm, Timer};
-use bsp::hal::uart::{DataBits, Enabled, StopBits, UartConfig, UartPeripheral};
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
 use bsp::hal::{Clock, Sio, I2C};
-use bsp::pac::{I2C0, I2C1, UART0};
+use bsp::pac::{I2C0, I2C1};
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
 #[cfg(feature = "pico")]
@@ -42,20 +39,20 @@ use embedded_hal::digital::v2::InputPin;
 #[cfg(feature = "pico")]
 use embedded_hal::digital::v2::OutputPin;
 use embedded_hal::prelude::*;
-use frunk::{HCons, HNil};
 use fugit::{ExtU32, RateExtU32};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::PressedKeys;
 use kyria_kb2040::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
+use kyria_kb2040::leds::UsualLeds;
 use kyria_kb2040::rotary::update_last_rotary;
 use kyria_kb2040::{cross_talk, log, media};
 #[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use panic_halt as _;
 #[cfg(feature = "pico")]
 use panic_probe as _;
-use rotary_encoder_hal::{Direction, Rotary};
+use rotary_encoder_hal::Rotary;
 #[cfg(feature = "pico")]
 use rp_pico as bsp;
 #[cfg(feature = "sf2040")]
@@ -68,13 +65,10 @@ use ssd1306::Ssd1306;
 use tinybmp::Bmp;
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::UsbDeviceState;
-use usbd_human_interface_device::device::consumer::{ConsumerControl, MultipleConsumerReport};
-use usbd_human_interface_device::usb_class::{UsbHidClass, UsbHidClassBuilder};
+use usbd_hid::descriptor::{MediaKey, MediaKeyboardReport, SerializedDescriptor};
+use usbd_hid::hid_class::HIDClass;
 
-mod anim;
 mod core1;
-mod fmt;
-mod leds;
 mod matrix;
 mod pins;
 mod ws2812;
@@ -104,12 +98,6 @@ type Display = Ssd1306<
     DisplaySize128x64,
     TerminalMode,
 >;
-#[cfg(feature = "kb2040")]
-type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio12, FunctionUart>, Pin<Gpio1, FunctionUart>)>;
-#[cfg(feature = "sf2040")]
-type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio16, FunctionUart>, Pin<Gpio1, FunctionUart>)>;
-#[cfg(feature = "pico")]
-type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio12, FunctionUart>, Pin<Gpio1, FunctionUart>)>;
 
 #[cfg(feature = "kb2040")]
 type I2CPeripheral =
@@ -197,21 +185,14 @@ mod app {
                 keyberon::keyboard::Keyboard<UsualLeds>,
             >,
         >,
-        media_class: Option<
-            UsbHidClass<
-                'static,
-                bsp::hal::usb::UsbBus,
-                HCons<ConsumerControl<'static, bsp::hal::usb::UsbBus>, HNil>,
-            >,
-        >,
-        media_report: MultipleConsumerReport,
+        media_class: Option<HIDClass<'static, bsp::hal::usb::UsbBus>>,
+        media_report: MediaKeyboardReport,
         sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
         // uart: Uart,
         rotary: RotaryEncoder,
         last_rotary: Option<(Event, u8)>,
         display: Display,
-        timer: Timer,
         alarm0: bsp::hal::timer::Alarm0,
         #[lock_free]
         watchdog: bsp::hal::watchdog::Watchdog,
@@ -281,21 +262,6 @@ mod app {
             Rotary::new(keyboard_pins.rotary2.into(), keyboard_pins.rotary1.into())
         };
         let _result = rotary.update();
-
-        // let uart = UartPeripheral::new(
-        //     c.device.UART0,
-        //     (
-        //         keyboard_pins.sda0.into_mode(),
-        //         keyboard_pins.scl0.into_mode(),
-        //     ),
-        //     &mut resets,
-        // );
-        // let uart = uart
-        //     .enable(
-        //         UartConfig::new(115_200.Hz(), DataBits::Eight, None, StopBits::One),
-        //         (&clocks.peripheral_clock).into(),
-        //     )
-        //     .unwrap();
 
         // Right functions as the I2C controller for communication between the halves and for USB.
         #[allow(unused_mut)]
@@ -435,16 +401,11 @@ mod app {
             is_right.then(|| keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, UsualLeds));
         // The class which specifies this device supports HID Media reports.
         let media_class = is_right.then(|| {
-            UsbHidClassBuilder::new()
-                .add_device(
-                    usbd_human_interface_device::device::consumer::ConsumerControlConfig::default(),
-                )
-                .build(unsafe { USB_BUS.as_ref().unwrap() })
-            // HIDClass::new(
-            //     unsafe { USB_BUS.as_ref().unwrap() },
-            //     MediaKeyboardReport::desc(),
-            //     60,
-            // )
+            HIDClass::new(
+                unsafe { USB_BUS.as_ref().unwrap() },
+                MediaKeyboardReport::desc(),
+                60,
+            )
         });
         // The device which represents the device to the system as being a "Keyberon"
         // keyboard.
@@ -457,9 +418,9 @@ mod app {
         }
 
         // Slower watchdog for debugging.
-        watchdog.start((2_000_000).micros());
+        // watchdog.start((2_000_000).micros());
         // Start watchdog and feed it with the lowest priority task at 1000hz
-        // watchdog.start(10_000.microseconds());
+        watchdog.start(10_000.micros());
 
         (
             Shared {
@@ -468,12 +429,12 @@ mod app {
                 last_rotary: None,
                 keyboard_class,
                 media_class,
-                media_report: MultipleConsumerReport::default(),
+                media_report: MediaKeyboardReport {
+                    usage_id: MediaKey::Zero.into(),
+                },
                 usb_dev,
                 display,
-                // uart,
                 i2c0,
-                timer,
                 alarm0,
                 watchdog,
                 matrix,
@@ -529,7 +490,7 @@ mod app {
     fn handle_event(c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         let mut layout = c.shared.layout;
         let mut keyboard_class = c.shared.keyboard_class;
-        let mut media_class = c.shared.media_class;
+        let media_class = c.shared.media_class;
         let mut usb_dev = c.shared.usb_dev;
         let mut last_media_report = c.shared.media_report;
         let i2c0 = c.shared.i2c0;
@@ -549,7 +510,7 @@ mod app {
 
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
-        let (report, media_report): (key_code::KbHidReport, Option<MultipleConsumerReport>) =
+        let (report, media_report): (key_code::KbHidReport, Option<MediaKeyboardReport>) =
             (layout, i2c0, sio_fifo /* , display */).lock(|l, i2c, sf /* , d */| {
                 let media_report = match l.tick() {
                     keyberon::layout::CustomEvent::Press(&custom_action) => {
@@ -579,12 +540,6 @@ mod app {
                             sf.write_blocking(serialized as u32);
                             // update led state, communicate to other half
 
-                            // let mut buf = [0u8; 32];
-                            // let mut wrapper = Wrapper::new(&mut buf);
-                            // let _ = writeln!(&mut wrapper, "set_ui {}\n", serialized);
-                            // let written = wrapper.written();
-                            // let _ =
-                            //     d.write_str(unsafe { core::str::from_utf8_unchecked(&buf[..written]) });
                             None
                         } else {
                             sf.write_blocking(u8::from(CustomAction::ColemakLed) as u32);
@@ -616,7 +571,7 @@ mod app {
         let media_report_modified = {
             if let Some(media_report) = media_report {
                 last_media_report.lock(|l| {
-                    if *l == media_report {
+                    if l.usage_id == media_report.usage_id {
                         false
                     } else {
                         *l = media_report;
@@ -647,7 +602,7 @@ mod app {
             let mut locker = (last_media_report, media_class);
             // Watchdog will prevent the keyboard from getting stuck in this loop.
             while let Ok(0) = locker.lock(|l, m| {
-                m.as_mut().unwrap().device().write_report(l).or_else(|e| {
+                m.as_mut().unwrap().push_input(l).or_else(|e| {
                     if let usb_device::UsbError::WouldBlock = e {
                         Ok(0)
                     } else {
@@ -709,6 +664,7 @@ mod app {
             .events(keys_pressed)
             .map(c.shared.transform);
 
+        // Get rotary status.
         let rotary_update = rotary.lock(|r| r.update().unwrap());
 
         // If we're on the right side of the keyboard, just send the events to the event handler
@@ -723,13 +679,12 @@ mod app {
             };
             let data = i2c0.lock(
                 |i2c: &mut Either<I2CPeripheral, I2CController>| -> Result<_, bsp::hal::i2c::Error> {
-                    if let Either::Right(i2c) = i2c {
-                        let mut buf = [0u8; BOARD_MAX_KEYS];
-                        i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
-                        Ok(buf)
-                    } else {
+                    let Either::Right(i2c) = i2c else {
                         log::unreachable!()
-                    }
+                    };
+                    let mut buf = [0u8; BOARD_MAX_KEYS];
+                    i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
+                    Ok(buf)
                 },
             );
             #[allow(clippy::drop_copy)]
@@ -817,11 +772,14 @@ mod app {
                 }
             };
 
-            let mut set_ui = false;
-
+            let mut read_count = 0;
+            let mut command = [0u8; 2];
             while let Some(event) = i2c.next() {
                 match event {
-                    I2CEvent::Start | I2CEvent::Restart => {}
+                    I2CEvent::Start | I2CEvent::Restart => {
+                        read_count = 0;
+                        command = [0u8; 2];
+                    }
                     I2CEvent::TransferRead => {
                         let mut buf = [0; BOARD_MAX_KEYS];
                         for (e, b) in scanned_events.drain(..).zip(buf.iter_mut()) {
@@ -833,46 +791,21 @@ mod app {
                         }
                     }
                     I2CEvent::TransferWrite => {
-                        let mut command = [0u8; 2];
-                        let read = i2c.read(&mut command);
+                        read_count += i2c.read(&mut command[read_count..]);
+                        if read_count < command.len() {
+                            continue;
+                        }
                         match command {
                             [READ_KEYS, _] => {
                                 // no-op
                             }
                             [SET_UI, layer] => {
-                                if read == 2 {
-                                    sio_fifo.write_blocking(layer as u32);
-                                } else {
-                                    set_ui = true;
-                                }
-
-                                // let mut buf = [0u8; 32];
-                                // let mut wrapper = Wrapper::new(&mut buf);
-                                // let _ = writeln!(&mut wrapper, "set_ui {} {}\n", layer, read);
-                                // let written = wrapper.written();
-                                // let _ = display.lock(|d| {
-                                //     d.write_str(unsafe {
-                                //         core::str::from_utf8_unchecked(&buf[..written])
-                                //     })
-                                // });
-                                log::info!("set_ui {} {}", layer, read);
+                                sio_fifo.write_blocking(layer as u32);
+                                log::info!("set_ui {}", layer);
                             }
-                            [layer, _] => {
-                                if set_ui {
-                                    set_ui = false;
-                                    sio_fifo.write_blocking(layer as u32);
-
-                                    // let mut buf = [0u8; 32];
-                                    // let mut wrapper = Wrapper::new(&mut buf);
-                                    // let _ = writeln!(&mut wrapper, "set_ui {}\n", layer);
-                                    // let written = wrapper.written();
-                                    // let _ = display.lock(|d| {
-                                    //     d.write_str(unsafe {
-                                    //         core::str::from_utf8_unchecked(&buf[..written])
-                                    //     })
-                                    // });
-                                    log::info!("set_ui {}", layer);
-                                }
+                            _ => {
+                                sio_fifo.write_blocking(u8::from(CustomAction::SymLed) as u32);
+                                log::info!("unknown command: {:?}", command);
                             }
                         }
                     }

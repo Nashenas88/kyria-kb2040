@@ -1,7 +1,5 @@
 #[cfg(feature = "kb2040")]
-use crate::bsp::hal::gpio::bank0::{
-    Gpio0, Gpio1, Gpio11, Gpio12, Gpio13, Gpio2, Gpio28, Gpio29, Gpio3,
-};
+use crate::bsp::hal::gpio::bank0::{Gpio0, Gpio1, Gpio11, Gpio12, Gpio2, Gpio28, Gpio29, Gpio3};
 #[cfg(feature = "sf2040")]
 use crate::bsp::hal::gpio::bank0::{Gpio0, Gpio1, Gpio16, Gpio2, Gpio28, Gpio29, Gpio3};
 #[cfg(feature = "pico")]

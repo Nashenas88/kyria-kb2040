@@ -4,17 +4,17 @@
 
 use core::fmt;
 
-pub(crate) struct Wrapper<'a> {
+pub struct Wrapper<'a> {
     buf: &'a mut [u8],
     offset: usize,
 }
 
 impl<'a> Wrapper<'a> {
-    pub(crate) fn new(buf: &'a mut [u8]) -> Self {
+    pub fn new(buf: &'a mut [u8]) -> Self {
         Wrapper { buf, offset: 0 }
     }
 
-    pub(crate) fn written(&self) -> usize {
+    pub fn written(&self) -> usize {
         self.offset
     }
 }
@@ -40,4 +40,19 @@ impl<'a> fmt::Write for Wrapper<'a> {
 
         Ok(())
     }
+}
+
+#[test]
+fn test_written() {
+    use std::fmt::Write;
+
+    let data = 5;
+    let mut buf = [0u8; 32];
+    let mut wrapper = Wrapper::new(&mut buf);
+    let _ = writeln!(&mut wrapper, "set_ui {}", data);
+    let written = wrapper.written();
+    let s = format!("{}", unsafe {
+        core::str::from_utf8_unchecked(&buf[..written])
+    });
+    assert_eq!(s, "set_ui 5\n");
 }

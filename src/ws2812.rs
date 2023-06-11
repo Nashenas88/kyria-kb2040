@@ -88,7 +88,7 @@ where
     }
 }
 
-impl<'a, P, SM, I> SmartLedsWrite for Ws2812<P, SM, I>
+impl<P, SM, I> SmartLedsWrite for Ws2812<P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,

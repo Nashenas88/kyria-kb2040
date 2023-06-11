@@ -1,9 +1,9 @@
-use crate::anim::{AnimState, AnimationController};
 use crate::bsp::hal::pio::PIOExt;
 use crate::bsp::hal::Sio;
 use crate::bsp::pac::{CorePeripherals, Peripherals};
 use crate::ws2812::Ws2812;
 use fugit::RateExtU32;
+use kyria_kb2040::anim::{AnimState, AnimationController};
 use kyria_kb2040::layout::CustomAction;
 use smart_leds::brightness;
 
