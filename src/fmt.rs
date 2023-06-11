@@ -42,6 +42,21 @@ impl<'a> fmt::Write for Wrapper<'a> {
     }
 }
 
+#[macro_export]
+macro_rules! dwrite_ {
+    ($display:expr, $len:expr, $($args:expr),* $(,)?) => {{
+        let mut buf = [0u8; $len];
+        let mut wrapper = $crate::fmt::Wrapper::new(&mut buf);
+        let _ = writeln!(&mut wrapper, $($args),*);
+        let written = wrapper.written();
+        $display.write_str(unsafe {
+            core::str::from_utf8_unchecked(&buf[..written])
+        })
+    }};
+}
+
+pub use dwrite_ as dwrite;
+
 #[test]
 fn test_written() {
     use std::fmt::Write;

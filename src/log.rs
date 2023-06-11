@@ -11,7 +11,7 @@ macro_rules! unreachable_ {
 
 #[cfg(not(feature = "defmt"))]
 #[macro_export]
-macro_rules! info_ {
+macro_rules! consume_ {
     ($($arg:expr),* $(,)?) => {
         {
             $(let _ = $arg;)*
@@ -19,4 +19,4 @@ macro_rules! info_ {
     };
 }
 
-pub use {info_ as info, unreachable_ as unreachable};
+pub use {consume_ as info, consume_ as error, unreachable_ as unreachable};
