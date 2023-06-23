@@ -38,5 +38,75 @@ pub fn deserialize(d: u8) -> Option<Event> {
     })
 }
 
+const COMMAND_MASK: u32 = 0x0000_00FF;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum InterProcessCommand {
+    ReadRotary,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum InterProcessResponse {
+    Rotary(Option<Event>),
+    Error,
+}
+
+impl TryFrom<u32> for InterProcessCommand {
+    type Error = u32;
+
+    fn try_from(val: u32) -> Result<Self, Self::Error> {
+        match val & COMMAND_MASK {
+            1 => Ok(Self::ReadRotary),
+            _ => Err(val),
+        }
+    }
+}
+
+impl From<InterProcessCommand> for u32 {
+    fn from(command: InterProcessCommand) -> Self {
+        match command {
+            InterProcessCommand::ReadRotary => 1,
+        }
+    }
+}
+
+const PRESS_VAL: u32 = 1 << 16;
+const RELEASE_VAL: u32 = 2 << 16;
+const NONE_VAL: u32 = 4 << 16;
+
+impl From<InterProcessResponse> for u32 {
+    fn from(response: InterProcessResponse) -> Self {
+        match response {
+            InterProcessResponse::Rotary(event) => match event {
+                Some(Event::Press(row, col)) => PRESS_VAL | (row as u32) << 8 | col as u32,
+                Some(Event::Release(row, col)) => RELEASE_VAL | (row as u32) << 8 | col as u32,
+                None => 3,
+            },
+            InterProcessResponse::Error => 0,
+        }
+    }
+}
+
+impl TryFrom<u32> for InterProcessResponse {
+    type Error = u32;
+
+    fn try_from(val: u32) -> Result<Self, <Self as TryFrom<u32>>::Error> {
+        match val {
+            0 => return Ok(Self::Error),
+            3 => return Ok(Self::Rotary(None)),
+            _ => {}
+        }
+
+        let row = (val & 0x0000_FF00) >> 8;
+        let col = val & 0x0000_00FF;
+        Ok(match val & 0x00FF_0000 {
+            PRESS_VAL => InterProcessResponse::Rotary(Some(Event::Press(row as u8, col as u8))),
+            RELEASE_VAL => InterProcessResponse::Rotary(Some(Event::Release(row as u8, col as u8))),
+            NONE_VAL => InterProcessResponse::Rotary(None),
+            _ => return Err(val),
+        })
+    }
+}
+
 #[cfg(test)]
 mod cross_talk_tests;

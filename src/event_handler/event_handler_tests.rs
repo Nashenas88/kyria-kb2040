@@ -47,7 +47,7 @@ impl EventHandler for MockEventHandler {
     }
 
     fn write_ui(&mut self, serialized: u8) {
-        self.serialized = Some(serialized.into());
+        self.serialized = serialized.try_into().ok();
     }
 
     fn usb_configured(&self) -> bool {
