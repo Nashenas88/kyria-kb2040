@@ -1,4 +1,4 @@
-use keyberon::action::{self, d, l};
+use keyberon::action::{self, d, l, HoldTapAction};
 use keyberon::key_code::KeyCode;
 
 // TODO: split into media, led variants and new enums.
@@ -38,29 +38,30 @@ impl CustomAction {
     }
 }
 
-impl From<u8> for CustomAction {
-    fn from(a: u8) -> Self {
-        match a {
-            0 => CustomAction::QwertyLed,
-            1 => CustomAction::ColemakLed,
-            2 => CustomAction::LayerSelectLed,
-            3 => CustomAction::NumpadLed,
-            4 => CustomAction::NavLed,
-            5 => CustomAction::SymLed,
-            _ => panic!("unexpected number {a}"),
-        }
+impl TryFrom<u8> for CustomAction {
+    type Error = ();
+    fn try_from(a: u8) -> Result<Self, Self::Error> {
+        Ok(match a {
+            1 => CustomAction::QwertyLed,
+            2 => CustomAction::ColemakLed,
+            3 => CustomAction::LayerSelectLed,
+            4 => CustomAction::NumpadLed,
+            5 => CustomAction::NavLed,
+            6 => CustomAction::SymLed,
+            _ => return Err(()),
+        })
     }
 }
 
 impl From<CustomAction> for u8 {
     fn from(action: CustomAction) -> Self {
         match action {
-            CustomAction::QwertyLed => 0,
-            CustomAction::ColemakLed => 1,
-            CustomAction::LayerSelectLed => 2,
-            CustomAction::NumpadLed => 3,
-            CustomAction::NavLed => 4,
-            CustomAction::SymLed => 5,
+            CustomAction::QwertyLed => 1,
+            CustomAction::ColemakLed => 2,
+            CustomAction::LayerSelectLed => 3,
+            CustomAction::NumpadLed => 4,
+            CustomAction::NavLed => 5,
+            CustomAction::SymLed => 6,
             _ => panic!("only led codes can serialize to integer"),
         }
     }
@@ -69,7 +70,10 @@ impl From<CustomAction> for u8 {
 pub(crate) type Action = action::Action<CustomAction>;
 macro_rules! ma {
     [$ca:expr, $($action:expr),+$(,)?] => {
-        Action::MultipleActions(&[Action::Custom($ca), $($action,)+])
+        {
+            const ARR: &'static [Action] = &[Action::Custom($ca), $($action,)+];
+            Action::MultipleActions(&ARR)
+        }
     };
 }
 
@@ -121,49 +125,53 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
     }
 
     macro_rules! home_mod {
-        ($tap:expr, $hold:expr, $mod_func:expr) => {
-            Action::HoldTap {
+        ($tap:expr, $hold:expr, $mod_func:expr) => {{
+            Action::HoldTap(&HoldTapAction {
                 timeout: 250,
                 hold: $hold,
                 tap: $tap,
                 config: ::keyberon::action::HoldTapConfig::Custom($mod_func),
                 tap_hold_interval: 0,
-            }
-        };
+            })
+        }};
     }
 
     // Colemak home row mods
-    const A_SFT: Action = home_mod!(&k(A), &k(LShift), left_mod);
-    const R_CTL: Action = home_mod!(&k(R), &k(LCtrl), left_mod);
-    const S_ALT: Action = home_mod!(&k(S), &k(LAlt), left_mod);
-    const T_GUI: Action = home_mod!(&k(T), &k(LGui), left_mod);
+    const A_SFT: Action = home_mod!(k(A), k(LShift), left_mod);
+    const R_CTL: Action = home_mod!(k(R), k(LCtrl), left_mod);
+    const S_ALT: Action = home_mod!(k(S), k(LAlt), left_mod);
+    const T_GUI: Action = home_mod!(k(T), k(LGui), left_mod);
 
-    const N_GUI: Action = home_mod!(&k(N), &k(RGui), right_mod);
-    const E_ALT: Action = home_mod!(&k(E), &k(RAlt), right_mod);
-    const I_CTL: Action = home_mod!(&k(I), &k(RCtrl), right_mod);
-    const O_SFT: Action = home_mod!(&k(O), &k(RShift), right_mod);
+    const N_GUI: Action = home_mod!(k(N), k(RGui), right_mod);
+    const E_ALT: Action = home_mod!(k(E), k(RAlt), right_mod);
+    const I_CTL: Action = home_mod!(k(I), k(RCtrl), right_mod);
+    const O_SFT: Action = home_mod!(k(O), k(RShift), right_mod);
 
     // Qwerty home row mods
-    // const A_SFT: Action = home_mod!(&k(A), &k(LShift), left_mod);
-    const S_CTL: Action = home_mod!(&k(S), &k(LCtrl), left_mod);
-    const D_ALT: Action = home_mod!(&k(D), &k(LAlt), left_mod);
-    const F_GUI: Action = home_mod!(&k(F), &k(LGui), left_mod);
+    // const A_SFT: Action = home_mod!(k(A), k(LShift), left_mod);
+    const S_CTL: Action = home_mod!(k(S), k(LCtrl), left_mod);
+    const D_ALT: Action = home_mod!(k(D), k(LAlt), left_mod);
+    const F_GUI: Action = home_mod!(k(F), k(LGui), left_mod);
 
-    const J_GUI: Action = home_mod!(&k(J), &k(RGui), right_mod);
-    const K_ALT: Action = home_mod!(&k(K), &k(RAlt), right_mod);
-    const L_CTL: Action = home_mod!(&k(L), &k(RCtrl), right_mod);
-    const SC_SFT: Action = home_mod!(&k(SColon), &k(RShift), right_mod);
+    const J_GUI: Action = home_mod!(k(J), k(RGui), right_mod);
+    const K_ALT: Action = home_mod!(k(K), k(RAlt), right_mod);
+    const L_CTL: Action = home_mod!(k(L), k(RCtrl), right_mod);
+    const SC_SFT: Action = home_mod!(k(SColon), k(RShift), right_mod);
 
     // Symbol home row mods
-    const EQ_SFT: Action = home_mod!(&k(Equal), &k(LShift), left_mod);
-    const US_CTL: Action = home_mod!(&m(&[LShift, Minus]), &k(LCtrl), left_mod);
-    const MN_ALT: Action = home_mod!(&k(Minus), &k(LAlt), left_mod);
-    const PL_GUI: Action = home_mod!(&m(&[LShift, Equal]), &k(LGui), left_mod);
+    const EQ_SFT: Action = home_mod!(k(Equal), k(LShift), left_mod);
+    const LMIN: &[KeyCode] = &[LShift, Minus];
+    const US_CTL: Action = home_mod!(m(&LMIN), k(LCtrl), left_mod);
+    const MN_ALT: Action = home_mod!(k(Minus), k(LAlt), left_mod);
+    const LEQ: &[KeyCode] = &[LShift, Equal];
+    const PL_GUI: Action = home_mod!(m(&LEQ), k(LGui), left_mod);
 
-    const LP_GUI: Action = home_mod!(&m(&[LShift, Kb9]), &k(RGui), right_mod);
-    const LB_ALT: Action = home_mod!(&m(&[LShift, LBracket]), &k(RAlt), right_mod);
-    const LS_CTL: Action = home_mod!(&k(LBracket), &k(RCtrl), right_mod);
-    const QT_SFT: Action = home_mod!(&k(Quote), &k(RShift), right_mod);
+    const L9: &[KeyCode] = &[LShift, Kb9];
+    const LP_GUI: Action = home_mod!(m(&L9), k(RGui), right_mod);
+    const LBRACK: &[KeyCode] = &[LShift, LBracket];
+    const LB_ALT: Action = home_mod!(m(&LBRACK), k(RAlt), right_mod);
+    const LS_CTL: Action = home_mod!(k(LBracket), k(RCtrl), right_mod);
+    const QT_SFT: Action = home_mod!(k(Quote), k(RShift), right_mod);
     const C_LCK: Action = Action::KeyCode(KeyCode::CapsLock);
     const N_LCK: Action = Action::KeyCode(KeyCode::NumLock);
     const S_LCK: Action = Action::KeyCode(KeyCode::ScrollLock);
@@ -195,13 +203,13 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
             [n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
         }
         { // (3) Numpad
-            [t   t      t       t    t    t      n      n          n      n      {N_LCK}     Kp7  Kp8 Kp9   KpMinus t      ]
-            [Tab LShift LCtrl   LAlt LGui t      n      n          n      n       KpSlash    Kp4  Kp5 Kp6   KpPlus  t      ]
-            [t   t      t       t    t    t      t      t          t      t       KpAsterisk Kp1  Kp2 Kp3   KpDot   KpEnter]
-            [n   t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0       {SYM} n   n     n       n      ]
+            [Escape t      t       t    t    t      n      n          n      n      {N_LCK}     Kp7  Kp8 Kp9   KpMinus t      ]
+            [Tab    LShift LCtrl   LAlt LGui t      n      n          n      n       KpSlash    Kp4  Kp5 Kp6   KpPlus  t      ]
+            [t      t      t       t    t    t      t      t          t      t       KpAsterisk Kp1  Kp2 Kp3   KpDot   KpEnter]
+            [n      t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0       {SYM} n   n     n       n      ]
         }
         { // (4) Nav
-            [t      Pause      PgUp  Up     PgDown t      n      n          n      n     t       t    t    t          t      t]
+            [Escape Pause      PgUp  Up     PgDown t      n      n          n      n     t       t    t    t          t      t]
             [Tab    PScreen    Left  Down   Right  t      n      n          n      n     t       RGui RAlt RCtrl      RShift t]
             [t      ScrollLock Home  Insert End    t      1      2          5      6     t       t    t    t          t      t]
             [n      Left       t     Right {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} Up   ScrollLock Down   n]

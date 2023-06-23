@@ -10,8 +10,8 @@ use test_case::test_case;
 #[test_case(CustomAction::SymLed; "SymLed")]
 fn custom_action_serialize(action: CustomAction) {
     let byte = u8::from(action);
-    let action2 = CustomAction::from(byte);
-    assert_eq!(action2, action);
+    let action2 = CustomAction::try_from(byte);
+    assert_eq!(action2, Ok(action));
 }
 
 #[test_case(CustomAction::QwertyLed; "QwertyLed")]
