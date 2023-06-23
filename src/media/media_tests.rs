@@ -1,5 +1,4 @@
 use super::*;
-use assert_matches::assert_matches;
 use test_case::test_case;
 
 #[test_case(CustomAction::MediaPlayPause, MediaKey::PlayPause; "MediaPlayPause")]
