@@ -25,14 +25,18 @@ usbd-hid = { git = "https://github.com/twitchyliquid64/usbd-hid", rev = "71632de
 
 # Led support
 smart-leds = "0.3.0"
-ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "0b0dbb035e220954300475784ac6fe3ab7f4ab9b" }
+# ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "0b0dbb035e220954300475784ac6fe3ab7f4ab9b" }
+ws2812-pio = { path = "..//ws2812-pio-rs" }
 nb = "1.0.0"
 pio = "0.2.0"
 
 # This revision supports boot2 by default.
-adafruit-kb2040 = { version = "0.6.0", optional = true }
-sparkfun-pro-micro-rp2040 = { version = "0.6.0", optional = true }
-rp-pico = { version = "0.7.0", optional = true }
+# adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal-boards", branch = "hal-0.9", optional = true }
+# sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal-boards", branch = "hal-0.9", optional = true }
+# rp-pico = { git = "https://github.com/rp-rs/rp-hal-boards", branch = "hal-0.9", optional = true }
+adafruit-kb2040 = { path = "../rp-hal-boards/boards/adafruit-kb2040", optional = true }
+sparkfun-pro-micro-rp2040 = { path = "../rp-hal-boards/boards/sparkfun-pro-micro-rp2040", optional = true }
+rp-pico = { path = "../rp-hal-boards/boards/rp-pico", optional = true }
 
 # This revision supports hold tap, easier to use.
 keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "24bd53f850bb5f07b1eee36fe3ac75082d439c10" }
@@ -117,4 +121,8 @@ lto = 'fat'
 opt-level = 3
 
 [patch.crates-io]
-rp2040-hal = { git = "https://github.com/nashenas88/rp-hal", branch = "i2c-irq" }
+# rp2040-hal = { git = "https://github.com/nashenas88/rp-hal", branch = "i2c-irq" }
+rp2040-hal = { path = "../rp-hal/rp2040-hal", version = "0.9.0" }
+adafruit-kb2040 = { path = "../rp-hal-boards/boards/adafruit-kb2040", version = "0.6.0" }
+sparkfun-pro-micro-rp2040 = { path = "../rp-hal-boards/boards/sparkfun-pro-micro-rp2040", version = "0.6.0" }
+rp-pico = { path = "../rp-hal-boards/boards/rp-pico", version = "0.7.0" }

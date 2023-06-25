@@ -1,7 +1,9 @@
 use smart_leds::{RGB, RGB8};
 
-#[derive(Copy, Clone)]
-pub enum AnimState {
+const NUM_LEDS: usize = 10;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AnimKind {
     Boot,
     Colemak,
     Qwerty,
@@ -9,141 +11,112 @@ pub enum AnimState {
     Sym,
 }
 
-const NUM_LEDS: usize = 10;
+const BOOT_ANIM_MS: u32 = 2000;
+const COLEMAK_ANIM_MS: u32 = 3000;
+const QWERTY_ANIM_MS: u32 = 3000;
+const LAYER_SELECT_ANIM_MS: u32 = 1000;
+const SYM_ANIM_MS: u32 = 3000;
+const TRANSITION_MS: u32 = 750;
+const GAUSS_STD_DEV: u32 = 75;
 
-impl Default for AnimState {
+impl AnimKind {
+    fn new() -> AnimKind {
+        AnimKind::Boot
+    }
+    fn anim_time_ms(&self) -> u32 {
+        match self {
+            AnimKind::Boot => BOOT_ANIM_MS,
+            AnimKind::Colemak => COLEMAK_ANIM_MS,
+            AnimKind::Qwerty => QWERTY_ANIM_MS,
+            AnimKind::LayerSelect => LAYER_SELECT_ANIM_MS,
+            AnimKind::Sym => SYM_ANIM_MS,
+        }
+    }
+}
+
+impl Default for AnimKind {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AnimState {
+    kind: AnimKind,
+    anim_ms: u32,
+}
+
 impl AnimState {
-    fn new() -> AnimState {
-        AnimState::Boot
-    }
-}
-
-#[derive(Default)]
-pub struct AnimationController {
-    state: AnimState,
-    anim_count: u16,
-}
-
-impl AnimationController {
     pub fn new() -> Self {
         Self {
-            state: AnimState::new(),
-            anim_count: 0,
+            kind: AnimKind::new(),
+            anim_ms: 0,
+        }
+    }
+
+    fn tick(&mut self, delta_ms: u32) -> bool {
+        self.anim_ms = self.anim_ms.wrapping_add(delta_ms);
+        if self.anim_ms >= self.kind.anim_time_ms() {
+            self.anim_ms = 0;
+            true
+        } else {
+            false
         }
     }
 
     pub fn leds(&self) -> [RGB8; NUM_LEDS] {
-        match self.state {
-            AnimState::Boot => self.boot_leds(),
-            AnimState::Colemak => self.colemak_leds(),
-            AnimState::Qwerty => self.qwerty_leds(),
-            AnimState::LayerSelect => self.layer_leds(),
-            AnimState::Sym => self.sym_leds(),
-        }
-    }
-
-    pub fn tick(&mut self) -> bool {
-        self.anim_count = self.anim_count.saturating_add(1);
-        if self.anim_count > self.max_anim_count() {
-            self.anim_count = 0;
-            if let AnimState::Boot = self.state {
-                return true;
+        match self.kind {
+            AnimKind::Boot => self.boot_leds(),
+            AnimKind::Colemak => ease_out::<{ COLEMAK_ANIM_MS as usize }>(self.anim_ms, |i, p| {
+                red(inverted(
+                    gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
+                ))
+            }),
+            AnimKind::Qwerty => ease_out::<{ QWERTY_ANIM_MS as usize }>(self.anim_ms, |i, p| {
+                blue(inverted(
+                    gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
+                ))
+            }),
+            AnimKind::LayerSelect => {
+                let mut leds = [RGB8::default(); NUM_LEDS];
+                let pos = self.anim_ms as f32 / LAYER_SELECT_ANIM_MS as f32;
+                for (led, idx) in leds.iter_mut().zip(BOARD_LED_ORDER.into_iter()) {
+                    let mut t = idx as f32 / (NUM_LEDS - 1) as f32 + pos;
+                    if t > 1.0 {
+                        t -= 1.0;
+                    }
+                    *led = rainbow_wheel(t);
+                }
+                leds
             }
+            AnimKind::Sym => ease_out::<{ SYM_ANIM_MS as usize }>(self.anim_ms, |i, p| {
+                green(inverted(
+                    gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
+                ))
+            }),
         }
-
-        false
-    }
-
-    #[allow(dead_code)]
-    pub fn state(&self) -> AnimState {
-        self.state
-    }
-
-    pub fn set_state(&mut self, state: AnimState) {
-        self.state = state;
-    }
-
-    fn max_anim_count(&self) -> u16 {
-        match self.state {
-            AnimState::Boot => 1000,
-            AnimState::Colemak => 1000,
-            AnimState::Qwerty => 1000,
-            AnimState::LayerSelect => 1000,
-            AnimState::Sym => 1000,
-        }
-    }
-
-    fn for_pos(idx: u8, pos: u8) -> u8 {
-        if idx == pos {
-            255
-        } else if idx < core::u8::MAX && idx == pos + 1 || (pos > 0 && idx == pos - 1) {
-            127
-        } else {
-            0
-        }
-    }
-
-    fn for_slow_pos(idx: u8, pos: u16) -> u8 {
-        let bumped_idx = (idx as u16).saturating_mul(100);
-        if bumped_idx == pos {
-            255
-        } else if bumped_idx < core::u16::MAX && bumped_idx == pos + 1
-            || (pos > 0 && bumped_idx == pos - 1)
-        {
-            127
-        } else {
-            0
-        }
-    }
-
-    fn red(c: u8) -> RGB8 {
-        RGB { r: c, g: 0, b: 0 }
-    }
-
-    fn green(c: u8) -> RGB8 {
-        RGB { r: 0, g: c, b: 0 }
-    }
-
-    fn blue(c: u8) -> RGB8 {
-        RGB { r: 0, g: 0, b: c }
     }
 
     fn boot_leds(&self) -> [RGB8; NUM_LEDS] {
-        if self.anim_count <= 333 {
-            let pos = (EASE_OUT[self.anim_count as usize] / 100) as u8;
-            [
-                Self::red(Self::for_pos(0, pos)),
-                Self::red(Self::for_pos(1, pos)),
-                Self::red(Self::for_pos(2, pos)),
-                Self::red(Self::for_pos(3, pos)),
-                Self::red(Self::for_pos(4, pos)),
-                Self::red(Self::for_pos(5, pos)),
-                Self::red(Self::for_pos(6, pos)),
-                Self::red(Self::for_pos(7, pos)),
-                Self::red(Self::for_pos(8, pos)),
-                Self::red(Self::for_pos(9, pos)),
-            ]
-        } else if self.anim_count <= 666 {
-            let pos = NUM_LEDS as u8 - (EASE_OUT[(self.anim_count - 334) as usize] / 100) as u8;
-            [
-                Self::red(Self::for_pos(0, pos)),
-                Self::red(Self::for_pos(1, pos)),
-                Self::red(Self::for_pos(2, pos)),
-                Self::red(Self::for_pos(3, pos)),
-                Self::red(Self::for_pos(4, pos)),
-                Self::red(Self::for_pos(5, pos)),
-                Self::red(Self::for_pos(6, pos)),
-                Self::red(Self::for_pos(7, pos)),
-                Self::red(Self::for_pos(8, pos)),
-                Self::red(Self::for_pos(9, pos)),
-            ]
+        let mut leds = [RGB8::default(); NUM_LEDS];
+        const SECTION_MS: usize = BOOT_ANIM_MS as usize / 3;
+        if self.anim_ms <= SECTION_MS as u32 {
+            let idx = (EASE_OUT.len() - 1) * self.anim_ms as usize / SECTION_MS;
+            let pos = EASE_OUT[idx];
+            for (led, idx) in leds.iter_mut().zip(BOARD_LED_ORDER.into_iter()) {
+                *led = red(gaussian::<GAUSS_STD_DEV>(idx as u16 * 100, pos) as u8);
+            }
+            leds
+        } else if self.anim_ms <= 2 * SECTION_MS as u32 {
+            let idx = (EASE_OUT.len() - 1) * (self.anim_ms as usize - SECTION_MS) / SECTION_MS;
+            let pos = NUM_LEDS as u16 * 100 - EASE_OUT[idx];
+            for (led, idx) in leds.iter_mut().zip(BOARD_LED_ORDER.into_iter()) {
+                *led = red(gaussian::<GAUSS_STD_DEV>(idx as u16 * 100, pos) as u8);
+            }
+            leds
         } else {
-            let intensity = SIN[(self.anim_count - 667) as usize];
+            let idx = (EASE_OUT.len() - 1) * (self.anim_ms as usize - 2 * SECTION_MS) / SECTION_MS;
+            let intensity = SIN[idx];
             [RGB {
                 r: intensity,
                 g: 0,
@@ -152,56 +125,187 @@ impl AnimationController {
         }
     }
 
-    fn colemak_leds(&self) -> [RGB8; NUM_LEDS] {
-        let pos = EASE_OUT[(self.anim_count / 3) as usize];
-        [
-            Self::red(255 - Self::for_slow_pos(0, pos)),
-            Self::red(255 - Self::for_slow_pos(1, pos)),
-            Self::red(255 - Self::for_slow_pos(2, pos)),
-            Self::red(255 - Self::for_slow_pos(3, pos)),
-            Self::red(255 - Self::for_slow_pos(4, pos)),
-            Self::red(255 - Self::for_slow_pos(5, pos)),
-            Self::red(255 - Self::for_slow_pos(6, pos)),
-            Self::red(255 - Self::for_slow_pos(7, pos)),
-            Self::red(255 - Self::for_slow_pos(8, pos)),
-            Self::red(255 - Self::for_slow_pos(9, pos)),
-        ]
+    fn from_kind(kind: AnimKind) -> AnimState {
+        Self { kind, anim_ms: 0 }
+    }
+}
+
+fn inverted(val: u8) -> u8 {
+    255 - val
+}
+
+fn red(c: u8) -> RGB8 {
+    RGB { r: c, g: 0, b: 0 }
+}
+
+fn green(c: u8) -> RGB8 {
+    RGB { r: 0, g: c, b: 0 }
+}
+
+fn blue(c: u8) -> RGB8 {
+    RGB { r: 0, g: 0, b: c }
+}
+
+fn rainbow_wheel(t: f32) -> RGB8 {
+    const COLORS: [(u8, u8, u8); 7] = [
+        (255, 0, 0),     // red
+        (255, 165, 0),   // orange
+        (255, 255, 0),   // yellow
+        (0, 255, 0),     // green
+        (0, 0, 255),     // blue
+        (75, 0, 130),    // indigo
+        (238, 130, 238), // violet
+    ];
+    const COLOR_WIDTH: f32 = 1.0 / COLORS.len() as f32;
+
+    let idx = t / COLOR_WIDTH;
+    let left = idx as usize;
+    let right = (idx + 1.0) as usize % COLORS.len();
+
+    let left_color = COLORS[left];
+    let right_color = COLORS[right];
+    let blend = idx - left as f32;
+    let (r, g, b) = (
+        (right_color.0 as f32 * blend + (left_color.0 as f32) * (1.0 - blend)) as u8,
+        (right_color.1 as f32 * blend + (left_color.1 as f32) * (1.0 - blend)) as u8,
+        (right_color.2 as f32 * blend + (left_color.2 as f32) * (1.0 - blend)) as u8,
+    );
+
+    RGB { r, g, b }
+}
+
+fn gaussian<const STD_DEV: u32>(x: u16, mean: u16) -> u16 {
+    const PEAK: u8 = 255;
+    let sqr_std_dev_2 = (2 * STD_DEV * STD_DEV) as f32;
+    let diff = x as f32 - mean as f32;
+    let exp = -(diff * diff / sqr_std_dev_2);
+    (PEAK as f32 * exp_approx(exp)) as u16
+}
+
+#[cfg(feature = "std")]
+const BOARD_LED_ORDER: [usize; NUM_LEDS] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+#[cfg(not(feature = "std"))]
+const BOARD_LED_ORDER: [usize; NUM_LEDS] = [0, 1, 2, 5, 6, 7, 8, 9, 4, 3];
+
+fn ease_out<const ANIM_MS: usize>(t: u32, color: impl Fn(u8, u16) -> RGB8) -> [RGB8; NUM_LEDS] {
+    let mut leds = [RGB8::default(); NUM_LEDS];
+    let idx = (EASE_OUT.len() - 1) * t as usize / ANIM_MS;
+    let pos = EASE_OUT[idx];
+    for (led, idx) in leds.iter_mut().zip(BOARD_LED_ORDER.into_iter()) {
+        *led = color(idx as u8, pos);
+    }
+    leds
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum InternalState {
+    Steady(AnimState),
+    Transition(AnimState, AnimState, u32),
+}
+
+impl InternalState {
+    fn tick(&mut self, delta_ms: u32) -> bool {
+        match self {
+            InternalState::Steady(state) => state.tick(delta_ms),
+            InternalState::Transition(from, to, count) => {
+                from.tick(delta_ms);
+                *count += 1;
+                to.tick(delta_ms)
+            }
+        }
+    }
+}
+
+impl Default for InternalState {
+    fn default() -> Self {
+        Self::Steady(AnimState::default())
+    }
+}
+
+#[derive(Default, Clone, PartialEq)]
+pub struct AnimationController {
+    state: InternalState,
+}
+
+impl AnimationController {
+    pub fn new() -> Self {
+        Self {
+            state: InternalState::default(),
+        }
     }
 
-    fn qwerty_leds(&self) -> [RGB8; NUM_LEDS] {
-        let pos = EASE_OUT[(self.anim_count / 3) as usize];
-        [
-            Self::blue(255 - Self::for_slow_pos(0, pos)),
-            Self::blue(255 - Self::for_slow_pos(1, pos)),
-            Self::blue(255 - Self::for_slow_pos(2, pos)),
-            Self::blue(255 - Self::for_slow_pos(3, pos)),
-            Self::blue(255 - Self::for_slow_pos(4, pos)),
-            Self::blue(255 - Self::for_slow_pos(5, pos)),
-            Self::blue(255 - Self::for_slow_pos(6, pos)),
-            Self::blue(255 - Self::for_slow_pos(7, pos)),
-            Self::blue(255 - Self::for_slow_pos(8, pos)),
-            Self::blue(255 - Self::for_slow_pos(9, pos)),
-        ]
+    pub fn leds(&self) -> [RGB8; NUM_LEDS] {
+        match self.state {
+            InternalState::Steady(state) => state.leds(),
+            InternalState::Transition(from, to, t) => {
+                self.leds_for_transition(&from.leds(), &to.leds(), t)
+            }
+        }
     }
 
-    fn layer_leds(&self) -> [RGB8; NUM_LEDS] {
-        [RGB8::default(); NUM_LEDS]
+    pub fn tick(&mut self, delta_ms: u32) -> bool {
+        if let InternalState::Transition(_, to, ref mut count) = self.state {
+            *count += delta_ms;
+            if *count >= TRANSITION_MS {
+                self.state = InternalState::Steady(to);
+            }
+        }
+        self.state.tick(delta_ms)
     }
 
-    fn sym_leds(&self) -> [RGB8; NUM_LEDS] {
-        let pos = EASE_OUT[(self.anim_count / 3) as usize];
-        [
-            Self::green(255 - Self::for_slow_pos(0, pos)),
-            Self::green(255 - Self::for_slow_pos(1, pos)),
-            Self::green(255 - Self::for_slow_pos(2, pos)),
-            Self::green(255 - Self::for_slow_pos(3, pos)),
-            Self::green(255 - Self::for_slow_pos(4, pos)),
-            Self::green(255 - Self::for_slow_pos(5, pos)),
-            Self::green(255 - Self::for_slow_pos(6, pos)),
-            Self::green(255 - Self::for_slow_pos(7, pos)),
-            Self::green(255 - Self::for_slow_pos(8, pos)),
-            Self::green(255 - Self::for_slow_pos(9, pos)),
-        ]
+    #[allow(dead_code)]
+    pub fn state(&self) -> AnimKind {
+        let (InternalState::Steady(state) | InternalState::Transition(_, state, _)) = self.state;
+        state.kind
+    }
+
+    pub fn set_state(&mut self, state: AnimKind) {
+        self.state = match self.state {
+            InternalState::Steady(from) => InternalState::Transition(
+                from,
+                AnimState {
+                    kind: state,
+                    anim_ms: from.anim_ms % state.anim_time_ms(),
+                },
+                0,
+            ),
+            InternalState::Transition(_, from, _) => InternalState::Transition(
+                from,
+                AnimState {
+                    kind: state,
+                    anim_ms: from.anim_ms % state.anim_time_ms(),
+                },
+                0,
+            ),
+        }
+    }
+
+    pub fn force_state(&mut self, state: AnimKind) {
+        self.state = InternalState::Steady(AnimState::from_kind(state));
+    }
+
+    #[inline(never)]
+    fn interp(c1: RGB8, c2: RGB8, t: u32) -> RGB8 {
+        let r = (c1.r as u64 * (TRANSITION_MS.saturating_sub(t) as u64) / TRANSITION_MS as u64
+            + c2.r as u64 * t as u64 / TRANSITION_MS as u64) as u8;
+        let g = (c1.g as u64 * (TRANSITION_MS.saturating_sub(t) as u64) / TRANSITION_MS as u64
+            + c2.g as u64 * t as u64 / TRANSITION_MS as u64) as u8;
+        let b = (c1.b as u64 * (TRANSITION_MS.saturating_sub(t) as u64) / TRANSITION_MS as u64
+            + c2.b as u64 * t as u64 / TRANSITION_MS as u64) as u8;
+        RGB { r, g, b }
+    }
+
+    fn leds_for_transition<const NUM: usize>(
+        &self,
+        from: &[RGB<u8>; NUM],
+        to: &[RGB<u8>; NUM],
+        t: u32,
+    ) -> [RGB<u8>; NUM] {
+        let mut leds = [RGB::default(); NUM];
+        for (led, (from, to)) in leds.iter_mut().zip(from.iter().zip(to.iter())) {
+            *led = Self::interp(*from, *to, t)
+        }
+        leds
     }
 }
 
@@ -243,3 +347,24 @@ const EASE_OUT: [u16; 334] = [
     993, 994, 994, 995, 995, 995, 996, 996, 997, 997, 997, 998, 998, 998, 998, 999, 999, 999, 999,
     999, 999, 999, 999, 999, 999, 1000,
 ];
+
+#[inline(always)]
+fn exp_approx(mut x: f32) -> f32 {
+    const A: f32 = (1 << 23) as f32 / core::f32::consts::LN_2;
+    const B: f32 = (1 << 23) as f32 * (127.0 - 0.043677448);
+    x = A * x + B;
+
+    const C: f32 = (1 << 23) as f32;
+    const D: f32 = (1 << 23) as f32 * 255.0;
+    if x < C || x > D {
+        x = if x < C { 0.0 } else { D };
+    }
+
+    let n: u32 = x as u32;
+    x = unsafe { core::mem::transmute_copy(&n) };
+    // memcpy(&x, &n, 4);
+    return x;
+}
+
+#[cfg(test)]
+mod anim_tests;

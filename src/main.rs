@@ -3,7 +3,7 @@
 #![no_std]
 #![no_main]
 
-use crate::pins::get_pins;
+use crate::pins::{get_pins, ColPin, RowPin};
 #[cfg(feature = "kb2040")]
 use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
@@ -14,9 +14,7 @@ use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio2, Gpio25, Gpio3};
 use bsp::hal::gpio::bank0::{Gpio1, Gpio16, Gpio2, Gpio25, Gpio3};
 #[cfg(feature = "pico")]
 use bsp::hal::gpio::bank0::{Gpio18, Gpio19, Gpio20, Gpio21, Gpio25, Gpio28};
-#[cfg(any(feature = "kb2040", feature = "pico"))]
-use bsp::hal::gpio::PullUpInput;
-use bsp::hal::gpio::{DynPin, FunctionI2C, Pin, PushPullOutput};
+use bsp::hal::gpio::{FunctionI2C, FunctionSioInput, FunctionSioOutput, Pin, PullNone, PullUp};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
 use bsp::hal::sio::SioFifo;
@@ -27,6 +25,7 @@ use bsp::hal::{Clock, Sio, I2C};
 use bsp::pac::{I2C0, I2C1};
 use bsp::XOSC_CRYSTAL_FREQ;
 use core::fmt::Write;
+use core::sync::atomic::{AtomicU8, Ordering};
 #[cfg(feature = "pico")]
 use defmt_rtt as _;
 use embedded_graphics::draw_target::DrawTargetExt;
@@ -44,15 +43,14 @@ use keyberon::debounce::Debouncer;
 use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::Matrix;
+use kyria_kb2040::cross_talk::{InterProcessCommand, InterProcessResponse};
 use kyria_kb2040::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use kyria_kb2040::leds::UsualLeds;
-use kyria_kb2040::rotary::update_last_rotary;
 use kyria_kb2040::{cross_talk, log, media};
 #[cfg(any(feature = "kb2040", feature = "sf2040"))]
 use panic_halt as _;
 #[cfg(feature = "pico")]
 use panic_probe as _;
-use rotary_encoder_hal::Rotary;
 #[cfg(feature = "pico")]
 use rp_pico as bsp;
 #[cfg(feature = "sf2040")]
@@ -72,51 +70,107 @@ mod core1;
 mod pins;
 
 #[cfg(feature = "kb2040")]
-type I2C0Controller = I2C<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type I2C0Controller = I2C<
+    I2C0,
+    (
+        Pin<Gpio12, FunctionI2C, PullUp>,
+        Pin<Gpio1, FunctionI2C, PullUp>,
+    ),
+>;
 #[cfg(feature = "sf2040")]
-type I2C0Controller = I2C<I2C0, (Pin<Gpio16, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type I2C0Controller = I2C<
+    I2C0,
+    (
+        Pin<Gpio16, FunctionI2C, PullUp>,
+        Pin<Gpio1, FunctionI2C, PullUp>,
+    ),
+>;
 #[cfg(feature = "pico")]
-type I2C0Controller = I2C<I2C0, (Pin<Gpio20, FunctionI2C>, Pin<Gpio21, FunctionI2C>)>;
+type I2C0Controller = I2C<
+    I2C0,
+    (
+        Pin<Gpio20, FunctionI2C, PullUp>,
+        Pin<Gpio21, FunctionI2C, PullUp>,
+    ),
+>;
 
 #[cfg(feature = "kb2040")]
 type Display = Ssd1306<
-    I2CInterface<I2C<I2C1, (Pin<Gpio2, FunctionI2C>, Pin<Gpio3, FunctionI2C>)>>,
+    I2CInterface<
+        I2C<
+            I2C1,
+            (
+                Pin<Gpio2, FunctionI2C, PullUp>,
+                Pin<Gpio3, FunctionI2C, PullUp>,
+            ),
+        >,
+    >,
     DisplaySize128x64,
     TerminalMode,
 >;
 #[cfg(feature = "sf2040")]
 type Display = Ssd1306<
-    I2CInterface<I2C<I2C1, (Pin<Gpio2, FunctionI2C>, Pin<Gpio3, FunctionI2C>)>>,
+    I2CInterface<
+        I2C<
+            I2C1,
+            (
+                Pin<Gpio2, FunctionI2C, PullUp>,
+                Pin<Gpio3, FunctionI2C, PullUp>,
+            ),
+        >,
+    >,
     DisplaySize128x64,
     TerminalMode,
 >;
 #[cfg(feature = "pico")]
 type Display = Ssd1306<
-    I2CInterface<I2C<I2C1, (Pin<Gpio18, FunctionI2C>, Pin<Gpio19, FunctionI2C>)>>,
+    I2CInterface<
+        I2C<
+            I2C1,
+            (
+                Pin<Gpio18, FunctionI2C, PullUp>,
+                Pin<Gpio19, FunctionI2C, PullUp>,
+            ),
+        >,
+    >,
     DisplaySize128x64,
     TerminalMode,
 >;
 
 #[cfg(feature = "kb2040")]
-type I2CPeripheral =
-    I2CPeripheralEventIterator<I2C0, (Pin<Gpio12, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type I2CPeripheral = I2CPeripheralEventIterator<
+    I2C0,
+    (
+        Pin<Gpio12, FunctionI2C, PullUp>,
+        Pin<Gpio1, FunctionI2C, PullUp>,
+    ),
+>;
 #[cfg(feature = "sf2040")]
-type I2CPeripheral =
-    I2CPeripheralEventIterator<I2C0, (Pin<Gpio16, FunctionI2C>, Pin<Gpio1, FunctionI2C>)>;
+type I2CPeripheral = I2CPeripheralEventIterator<
+    I2C0,
+    (
+        Pin<Gpio16, FunctionI2C, PullUp>,
+        Pin<Gpio1, FunctionI2C, PullUp>,
+    ),
+>;
 #[cfg(feature = "pico")]
-type I2CPeripheral =
-    I2CPeripheralEventIterator<I2C0, (Pin<Gpio20, FunctionI2C>, Pin<Gpio21, FunctionI2C>)>;
+type I2CPeripheral = I2CPeripheralEventIterator<
+    I2C0,
+    (
+        Pin<Gpio20, FunctionI2C, PullUp>,
+        Pin<Gpio21, FunctionI2C, PullUp>,
+    ),
+>;
 
 type I2CController = I2C0Controller;
-type RotaryEncoder = Rotary<DynPin, DynPin>;
 type ScannedKeys = ArrayDeque<u8, BOARD_MAX_KEYS, behavior::Wrapping>;
 
 #[cfg(feature = "kb2040")]
-type BootButton = Pin<Gpio11, PullUpInput>;
+type BootButton = Pin<Gpio11, FunctionSioInput, PullUp>;
 #[cfg(feature = "sf2040")]
 type BootButton = ();
 #[cfg(feature = "pico")]
-type BootButton = Pin<Gpio28, PullUpInput>;
+type BootButton = Pin<Gpio28, FunctionSioInput, PullUp>;
 
 const NCOL_PINS: usize = 8;
 type PressedKeys = [[bool; NCOL_PINS]; NROWS];
@@ -127,8 +181,6 @@ const I2C_PERIPHERAL_ADDR: u8 = 0x56;
 /// This is always the time from the *start* of the previous scan.
 const SCAN_TIME_US: u32 = 1000;
 const BOARD_MAX_KEYS: usize = 8;
-/// Number of scan cycles to wait before triggering rotary release event.
-const ROTARY_WAIT: u8 = 1;
 
 pub enum Either<T, U> {
     Left(T),
@@ -162,11 +214,15 @@ where
 }
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
+static LED_STATE: AtomicU8 = AtomicU8::new(0);
+static LED_STATE_REF: &'static AtomicU8 = &LED_STATE;
+static mut TIMER: Option<Timer> = None;
+static TIMER_ADDR: &'static Option<Timer> = unsafe { &TIMER };
+
 // Rtic entry point. Uses the kb2040's Peripheral Access API (pac), and uses the
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
-
     use super::*;
 
     /// The number of times a switch needs to be in the same state for the
@@ -187,17 +243,13 @@ mod app {
         >,
         media_class: Option<HIDClass<'static, bsp::hal::usb::UsbBus>>,
         media_report: MediaKeyboardReport,
-        sio_fifo: SioFifo,
         i2c0: Either<I2CPeripheral, I2CController>,
-        // uart: Uart,
-        rotary: RotaryEncoder,
-        last_rotary: Option<(Event, u8)>,
         display: Display,
         alarm0: bsp::hal::timer::Alarm0,
         #[lock_free]
         watchdog: bsp::hal::watchdog::Watchdog,
         #[lock_free]
-        matrix: Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }>,
+        matrix: Matrix<ColPin, RowPin, { NCOL_PINS }, { NROWS }>,
         layout: Layout<{ NCOLS }, { NROWS }, { NLAYERS }, CustomAction>,
         #[lock_free]
         debouncer: Debouncer<PressedKeys>,
@@ -211,7 +263,8 @@ mod app {
         #[cfg(any(feature = "pico", feature = "kb2040"))]
         boot_button: BootButton,
         #[cfg(feature = "pico")]
-        led: Pin<Gpio25, PushPullOutput>,
+        led: Pin<Gpio25, FunctionSioOutput, PullNone>,
+        sio_fifo: SioFifo,
     }
 
     /// Setup for the keyboard.
@@ -242,6 +295,7 @@ mod app {
         let peripheral_freq = clocks.peripheral_clock.freq().to_Hz();
         sio.fifo.write_blocking(sys_freq);
         sio.fifo.write_blocking(peripheral_freq);
+        sio.fifo.write_blocking(LED_STATE_REF as *const _ as u32);
 
         let pins = bsp::Pins::new(
             c.device.IO_BANK0,
@@ -252,20 +306,10 @@ mod app {
 
         let keyboard_pins = get_pins(pins);
         let is_right = keyboard_pins.is_right;
-
-        // TODO how to make this per-board?
-        // The rotaries are wired differently on the left and right keyboards.
-        let mut rotary = if is_right {
-            Rotary::new(keyboard_pins.rotary1.into(), keyboard_pins.rotary2.into())
-        } else {
-            // TODO how to make this per-board?
-            Rotary::new(keyboard_pins.rotary2.into(), keyboard_pins.rotary1.into())
-        };
-        let _result = rotary.update();
+        sio.fifo.write_blocking(is_right as u32);
 
         // Right functions as the I2C controller for communication between the halves and for USB.
-        #[allow(unused_mut)]
-        let mut i2c0 = if is_right {
+        let i2c0 = if is_right {
             Either::Right({
                 let i2c = bsp::hal::I2C::i2c0(
                     c.device.I2C0,
@@ -326,7 +370,7 @@ mod app {
         let mut display = display.into_terminal_mode();
         display.init().unwrap();
 
-        let mut timer = Timer::new(c.device.TIMER, &mut resets);
+        let mut timer = Timer::new(c.device.TIMER, &mut resets, &clocks);
 
         cortex_m::asm::delay(1000);
 
@@ -339,7 +383,7 @@ mod app {
 
         // Build the matrix that will inform which specific combinations of row and col switches
         // are being pressed.
-        let matrix: Matrix<DynPin, DynPin, { NCOL_PINS }, { NROWS }> =
+        let matrix: Matrix<ColPin, RowPin, { NCOL_PINS }, { NROWS }> =
             cortex_m::interrupt::free(move |_cs| {
                 Matrix::new(
                     [
@@ -409,6 +453,12 @@ mod app {
         // keyboard.
         let usb_dev = is_right.then(|| keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() }));
 
+        unsafe {
+            TIMER = Some(timer);
+        }
+        sio.fifo.write_blocking(TIMER_ADDR as *const _ as u32);
+        let sio_fifo = sio.fifo;
+
         if is_right {
             display.write_str("Right\n").unwrap();
         } else {
@@ -418,13 +468,11 @@ mod app {
         // Slower watchdog for debugging.
         // watchdog.start((2_000_000).micros());
         // Start watchdog and feed it with the lowest priority task at 1000hz
-        watchdog.start(10_000.micros());
+        watchdog.start(40_000.micros());
+        // watchdog.start(10_000.micros());
 
         (
             Shared {
-                sio_fifo: sio.fifo,
-                rotary,
-                last_rotary: None,
                 keyboard_class,
                 media_class,
                 media_report: MediaKeyboardReport {
@@ -443,13 +491,15 @@ mod app {
                 scanned_events: ArrayDeque::new(),
             },
             #[cfg(feature = "sf2040")]
-            Local {},
+            Local { sio_fifo },
             #[cfg(feature = "kb2040")]
             Local {
+                sio_fifo,
                 boot_button: keyboard_pins.boot_button,
             },
             #[cfg(feature = "pico")]
             Local {
+                sio_fifo,
                 boot_button: keyboard_pins.boot_button,
                 led: keyboard_pins.led,
             },
@@ -483,7 +533,7 @@ mod app {
     #[task(
         priority = 2,
         capacity = 8,
-        shared = [usb_dev, display, keyboard_class, media_class, media_report, i2c0, layout, rotary, sio_fifo],
+        shared = [usb_dev, keyboard_class, media_class, media_report, i2c0, layout], //, rotary],
     )]
     fn handle_event(c: handle_event::Context, event: Option<keyberon::layout::Event>) {
         let mut layout = c.shared.layout;
@@ -492,8 +542,6 @@ mod app {
         let mut usb_dev = c.shared.usb_dev;
         let mut last_media_report = c.shared.media_report;
         let i2c0 = c.shared.i2c0;
-        let sio_fifo = c.shared.sio_fifo;
-        // let display = c.shared.display;
 
         // If there's an event, process it with the layout and return early. We use `None`
         // to signify that the current scan is done with its events.
@@ -509,38 +557,37 @@ mod app {
         // "Tick" the layout so that it gets to a consistent state, then read the keycodes into
         // a Keyboard HID Report.
         let (report, media_report): (key_code::KbHidReport, Option<MediaKeyboardReport>) =
-            (layout, i2c0, sio_fifo /* , display */).lock(|l, i2c, sf /* , d */| {
+            (layout, i2c0).lock(|l, i2c| {
                 let media_report = match l.tick() {
                     keyberon::layout::CustomEvent::Press(&custom_action) => {
                         if custom_action.is_led() {
                             let serialized = custom_action.into();
-                            if let Either::Right(i2c) = i2c {
-                                if let Err(_) =
-                                    i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized])
-                                {
-                                    // let e: bsp::hal::i2c::Error = e;
-                                    // let _ = match e {
-                                    //     bsp::hal::i2c::Error::Abort(_) => d.write_str("abort\n"),
-                                    //     bsp::hal::i2c::Error::InvalidReadBufferLength => {
-                                    //         d.write_str("readlen\n")
-                                    //     }
-                                    //     bsp::hal::i2c::Error::InvalidWriteBufferLength => {
-                                    //         d.write_str("writelen\n")
-                                    //     }
-                                    //     bsp::hal::i2c::Error::AddressOutOfRange(_) => {
-                                    //         d.write_str("aor\n")
-                                    //     }
-                                    //     bsp::hal::i2c::Error::AddressReserved(_) => d.write_str("ar\n"),
-                                    //     _ => d.write_str("abc\n"),
-                                    // };
-                                }
+                            let Either::Right(i2c) = i2c else {
+                                log::unreachable!();
+                            };
+                            if let Err(_e) = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]) {
+                                // let e: bsp::hal::i2c::Error = e;
+                                // let _ = match e {
+                                //     bsp::hal::i2c::Error::Abort(_) => d.write_str("abort\n"),
+                                //     bsp::hal::i2c::Error::InvalidReadBufferLength => {
+                                //         d.write_str("readlen\n")
+                                //     }
+                                //     bsp::hal::i2c::Error::InvalidWriteBufferLength => {
+                                //         d.write_str("writelen\n")
+                                //     }
+                                //     bsp::hal::i2c::Error::AddressOutOfRange(_) => {
+                                //         d.write_str("aor\n")
+                                //     }
+                                //     bsp::hal::i2c::Error::AddressReserved(_) => d.write_str("ar\n"),
+                                //     _ => d.write_str("abc\n"),
+                                // };
+                            } else {
+                                LED_STATE.store(serialized, Ordering::Relaxed);
                             }
-                            sf.write_blocking(serialized as u32);
                             // update led state, communicate to other half
 
                             None
                         } else {
-                            sf.write_blocking(u8::from(CustomAction::ColemakLed) as u32);
                             media::media_report_for_action(custom_action)
                         }
                     }
@@ -548,7 +595,6 @@ mod app {
                         if custom_action.is_led() {
                             None
                         } else {
-                            sf.write_blocking(u8::from(CustomAction::QwertyLed) as u32);
                             Some(media::release_for_media_action())
                         }
                     }
@@ -621,23 +667,20 @@ mod app {
             alarm0,
             &transform,
             &is_right,
-            rotary,
-            last_rotary,
             scanned_events,
             i2c0,
             display,
         ],
-        local = [boot_button, led]
+        local = [sio_fifo, boot_button, led]
     )]
     fn scan_timer_irq(c: scan_timer_irq::Context) {
         let mut alarm0 = c.shared.alarm0;
-        let mut rotary = c.shared.rotary;
-        let mut last_rotary = c.shared.last_rotary;
         #[cfg(any(feature = "kb2040", feature = "pico"))]
         let boot_button = c.local.boot_button;
         let mut scanned_events = c.shared.scanned_events;
         let mut i2c0 = c.shared.i2c0;
         let is_right = *c.shared.is_right;
+        let sio_fifo = c.local.sio_fifo;
 
         #[cfg(any(feature = "kb2040", feature = "pico"))]
         if boot_button.is_low().unwrap() {
@@ -653,6 +696,8 @@ mod app {
         // Feed the watchdog so it knows we haven't frozen/crashed.
         c.shared.watchdog.feed();
 
+        sio_fifo.write_blocking(InterProcessCommand::ReadRotary.into());
+
         // Get debounced, pressed keys.
         let matrix = c.shared.matrix;
         let keys_pressed = matrix.get_with_delay(|| cortex_m::asm::delay(100)).unwrap();
@@ -662,8 +707,8 @@ mod app {
             .events(keys_pressed)
             .map(c.shared.transform);
 
-        // Get rotary status.
-        let rotary_update = rotary.lock(|r| r.update().unwrap());
+        // // Get rotary status.
+        // let rotary_update = rotary.lock(|r| r.update().unwrap());
 
         // If we're on the right side of the keyboard, just send the events to the event handler
         // so they can be sent over USB.
@@ -681,7 +726,7 @@ mod app {
                         log::unreachable!()
                     };
                     let mut buf = [0u8; BOARD_MAX_KEYS];
-                    i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS], &mut buf)?;
+                    i2c.write_read(I2C_PERIPHERAL_ADDR, &[READ_KEYS, 42], &mut buf)?;
                     Ok(buf)
                 },
             );
@@ -701,11 +746,19 @@ mod app {
                 handle_event::spawn(Some(event)).unwrap();
             }
 
-            if let Some(rotary_event) =
-                last_rotary.lock(|l| update_last_rotary::<ROTARY_WAIT>(l, rotary_update, 14, 12))
-            {
-                handle_event::spawn(Some(rotary_event)).unwrap();
-            }
+            let result: Result<InterProcessResponse, u32> = sio_fifo.read_blocking().try_into();
+            match result {
+                Ok(InterProcessResponse::Rotary(Some(rotary_event))) => {
+                    handle_event::spawn(Some(rotary_event)).unwrap();
+                }
+                Ok(InterProcessResponse::Rotary(None)) => {}
+                Ok(InterProcessResponse::Error) => {
+                    log::error!("Unexpected rotary value");
+                }
+                Err(e) => {
+                    log::error!("Unexpected rotary value: {}", e);
+                }
+            };
 
             handle_event::spawn(None).unwrap();
         } else {
@@ -722,12 +775,20 @@ mod app {
                 last = i;
             }
 
-            if let Some(rotary_event) =
-                last_rotary.lock(|l| update_last_rotary::<ROTARY_WAIT>(l, rotary_update, 3, 1))
-            {
-                es[last] = Some(rotary_event);
-                last += 1;
-            }
+            let result: Result<InterProcessResponse, u32> = sio_fifo.read_blocking().try_into();
+            match result {
+                Ok(InterProcessResponse::Rotary(Some(rotary_event))) => {
+                    es[last] = Some(rotary_event);
+                    last += 1;
+                }
+                Ok(InterProcessResponse::Rotary(None)) => {}
+                Ok(InterProcessResponse::Error) => {
+                    log::error!("Unexpected rotary value");
+                }
+                Err(e) => {
+                    log::error!("Unexpected rotary value: {}", e);
+                }
+            };
 
             let stop_index = last + 1;
             for e in es.iter().take(stop_index).flatten() {
@@ -752,15 +813,13 @@ mod app {
         shared = [
             scanned_events,
             i2c0,
-            sio_fifo,
         ]
     )]
     fn i2c_peripheral_event_loop(c: i2c_peripheral_event_loop::Context) {
         let scanned_events = c.shared.scanned_events;
         let i2c0 = c.shared.i2c0;
-        let sio_fifo = c.shared.sio_fifo;
 
-        (i2c0, scanned_events, sio_fifo).lock(|i2c0, scanned_events, sio_fifo| {
+        (i2c0, scanned_events).lock(|i2c0, scanned_events| {
             let i2c = match i2c0 {
                 Either::Left(i2c) => i2c,
                 Either::Right(_) => {
@@ -789,21 +848,19 @@ mod app {
                         }
                     }
                     I2CEvent::TransferWrite => {
-                        read_count += i2c.read(&mut command[read_count..]);
-                        if read_count < command.len() {
-                            continue;
+                        while read_count < command.len() {
+                            read_count += i2c.read(&mut command[read_count..]);
                         }
+                        read_count = 0;
                         match command {
                             [READ_KEYS, _] => {
                                 // no-op
                             }
                             [SET_UI, layer] => {
-                                sio_fifo.write_blocking(layer as u32);
-                                log::info!("set_ui {}", layer);
+                                LED_STATE.store(layer, Ordering::Relaxed);
                             }
                             _ => {
-                                sio_fifo.write_blocking(u8::from(CustomAction::SymLed) as u32);
-                                log::info!("unknown command: {:?}", command);
+                                log::info!("Unknown command: {:?}", command);
                             }
                         }
                     }
