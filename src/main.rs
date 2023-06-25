@@ -465,11 +465,13 @@ mod app {
             display.write_str("Left\n").unwrap();
         }
 
-        // Slower watchdog for debugging.
-        // watchdog.start((2_000_000).micros());
-        // Start watchdog and feed it with the lowest priority task at 1000hz
-        watchdog.start(40_000.micros());
-        // watchdog.start(10_000.micros());
+        // Do not enable watchdog when debugging.
+        #[cfg(not(feature = "debug"))]
+        {
+            watchdog.start(40_000.micros());
+            // Start watchdog and feed it with the lowest priority task at 1000hz
+            // watchdog.start(10_000.micros());
+        }
 
         (
             Shared {
@@ -565,22 +567,8 @@ mod app {
                             let Either::Right(i2c) = i2c else {
                                 log::unreachable!();
                             };
-                            if let Err(_e) = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]) {
-                                // let e: bsp::hal::i2c::Error = e;
-                                // let _ = match e {
-                                //     bsp::hal::i2c::Error::Abort(_) => d.write_str("abort\n"),
-                                //     bsp::hal::i2c::Error::InvalidReadBufferLength => {
-                                //         d.write_str("readlen\n")
-                                //     }
-                                //     bsp::hal::i2c::Error::InvalidWriteBufferLength => {
-                                //         d.write_str("writelen\n")
-                                //     }
-                                //     bsp::hal::i2c::Error::AddressOutOfRange(_) => {
-                                //         d.write_str("aor\n")
-                                //     }
-                                //     bsp::hal::i2c::Error::AddressReserved(_) => d.write_str("ar\n"),
-                                //     _ => d.write_str("abc\n"),
-                                // };
+                            if let Err(e) = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]) {
+                                log::error!("Failed to write to left side over i2c: {:?}", e);
                             } else {
                                 LED_STATE.store(serialized, Ordering::Relaxed);
                             }
@@ -706,9 +694,6 @@ mod app {
             .debouncer
             .events(keys_pressed)
             .map(c.shared.transform);
-
-        // // Get rotary status.
-        // let rotary_update = rotary.lock(|r| r.update().unwrap());
 
         // If we're on the right side of the keyboard, just send the events to the event handler
         // so they can be sent over USB.

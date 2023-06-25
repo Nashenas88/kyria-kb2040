@@ -1,5 +1,3 @@
-use core::sync::atomic::{AtomicU8, Ordering};
-
 use crate::bsp::hal::pac::{self, interrupt};
 use crate::bsp::hal::pio::{PIOExt, SM0};
 use crate::bsp::hal::sio::SioFifo;
@@ -7,6 +5,7 @@ use crate::bsp::hal::timer::{Alarm, Alarm1};
 use crate::bsp::hal::{Sio, Timer};
 use crate::bsp::pac::{CorePeripherals, Peripherals, PIO0};
 use crate::pins::{Core1Pins, RgbPin, RotaryPin};
+use core::sync::atomic::{AtomicU8, Ordering};
 use fugit::{ExtU32, MicrosDurationU32, RateExtU32};
 use keyberon::layout::Event;
 use kyria_kb2040::anim::{AnimKind, AnimationController};

@@ -60,6 +60,7 @@ druid = "0.8.3"
 "pico" = ["rp-pico", "defmt", "panic-probe"]
 "defmt" = ["dep:defmt", "defmt-rtt"]
 "std" = []
+"debug" = []
 
 [[bin]]
 name = "kyria-kb2040"
