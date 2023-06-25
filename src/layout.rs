@@ -11,6 +11,7 @@ pub enum CustomAction {
     NumpadLed,
     NavLed,
     SymLed,
+    FunctionLed,
     MediaPlayPause,
     MediaNext,
     MediaBack,
@@ -27,7 +28,8 @@ impl CustomAction {
             | CustomAction::LayerSelectLed
             | CustomAction::NumpadLed
             | CustomAction::NavLed
-            | CustomAction::SymLed => true,
+            | CustomAction::SymLed
+            | CustomAction::FunctionLed => true,
             CustomAction::MediaPlayPause
             | CustomAction::MediaNext
             | CustomAction::MediaBack
@@ -84,6 +86,7 @@ const LAYER: Action = ma![CustomAction::LayerSelectLed, l(2)];
 const NUM_PAD: Action = ma![CustomAction::NumpadLed, d(3)];
 const NAV: Action = ma![CustomAction::NavLed, d(4)];
 const SYM: Action = ma![CustomAction::SymLed, l(5)];
+const FUNC: Action = ma![CustomAction::FunctionLed, l(6)];
 
 const MP: Action = Action::Custom(CustomAction::MediaPlayPause);
 const MN: Action = Action::Custom(CustomAction::MediaNext);
@@ -98,7 +101,7 @@ pub const NCOLS: usize = 16;
 /// The number of rows on the keyboard.
 pub const NROWS: usize = 4;
 
-pub const NLAYERS: usize = 6;
+pub const NLAYERS: usize = 7;
 
 pub type Layout = keyberon::layout::Layout<NCOLS, NROWS, NLAYERS, CustomAction>;
 
@@ -199,26 +202,32 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
         { // (2) Layer Selector
             [t  t       t    t        t        t n  n          n      n  t  t        t        t    t       t]
             [t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t n  n          n      n  t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
-            [t  t       t    t        t        t t  t          t      t  t  t        t        t    t       t]
+            [t  t       t    t       {FUNC}    t t  t          t      t  t {FUNC}    t        t    t       t]
             [n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
         }
         { // (3) Numpad
             [Escape t      t       t    t    t      n      n          n      n      {N_LCK}     Kp7  Kp8 Kp9   KpMinus t      ]
             [Tab    LShift LCtrl   LAlt LGui t      n      n          n      n       KpSlash    Kp4  Kp5 Kp6   KpPlus  t      ]
             [t      t      t       t    t    t      t      t          t      t       KpAsterisk Kp1  Kp2 Kp3   KpDot   KpEnter]
-            [n      t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0       {SYM} n   n     n       n      ]
+            [n      t      NumLock t   {SYM} BSpace Space {LAYER}    {LAYER} KpEnter Kp0       {SYM}{VD}{VM}  {VU}     n      ]
         }
         { // (4) Nav
-            [Escape Pause      PgUp  Up     PgDown t      n      n          n      n     t       t    t    t          t      t]
-            [Tab    PScreen    Left  Down   Right  t      n      n          n      n     t       RGui RAlt RCtrl      RShift t]
-            [t      ScrollLock Home  Insert End    t      1      2          5      6     t       t    t    t          t      t]
-            [n      Left       t     Right {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM} Up   ScrollLock Down   n]
+            [Escape Pause      PgUp  Up     PgDown t      n      n          n      n     t       t    t    t     t      t]
+            [Tab    PScreen    Left  Down   Right  t      n      n          n      n     t       RGui RAlt RCtrl RShift t]
+            [t      ScrollLock Home  Insert End    t      1      2          5      6     t       t    t    t     t      t]
+            [n      Left       t     Right {SYM}   BSpace Space {LAYER}    {LAYER} Enter Delete {SYM}{VD} {VM}  {VU}    n]
         }
         { // (5) Symbol
-            [n     1       2       3       4       5      n     n    n n      6      7       8       9       0       n]
-            [Tab  {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} n      n     n    n n      n     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} n]
-            [n     ~      Grave    |       Bslash  n      t     t    t t      n     ')'     '}'     ']'     '"'      n]
-            [n     t       t       t       t       BSpace Space t    t Enter  Delete t       t       t       t       n]
+            [Escape 1       2       3       4       5      n     n    n n      6      7       8       9       0       t]
+            [Tab   {EQ_SFT}{US_CTL}{MN_ALT}{PL_GUI} t      n     n    n n      t     {LP_GUI}{LB_ALT}{LS_CTL}{QT_SFT} t]
+            [n      ~       Grave   |       Bslash  t      t     t    t t      t     ')'     '}'     ']'     '"'      t]
+            [n      t       t       t       t       BSpace Space t    t Enter  Delete t       t       t       t       n]
+        }
+        { // (6) Function
+            [Escape F1     F2    F3   F4   F5     n     n    n n     F6     F7   F8   F9    F10    t]
+            [Tab    LShift LCtrl LAlt LGui F11    n     n    n n     F12    RGui RAlt RCtrl RShift t]
+            [t      t      t     t    t    t      t     t    t t     t      t    t    t     t      t]
+            [n      t      t     t    t    BSpace Space t    t Enter Delete t    t    t     t      n]
         }
     }
 };
