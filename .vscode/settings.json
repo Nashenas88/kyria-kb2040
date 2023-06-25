@@ -15,4 +15,11 @@
         "kb2040",
     ],
     "editor.formatOnSave": true,
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml"
+    ],
+    "lldb.displayFormat": "auto",
+    "lldb.showDisassembly": "auto",
+    "lldb.dereferencePointers": true,
+    "lldb.consoleMode": "commands",
 }

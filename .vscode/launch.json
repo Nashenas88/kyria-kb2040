@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch Core1 Emulator",
+            "program": "${workspaceFolder}/target/x86_64-unknown-linux-gnu/debug/examples/core1_emulator",
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "type": "probe-rs-debug",
             "request": "attach",
             "name": "probe-rs Debug",
