@@ -5,12 +5,13 @@ use crate::bsp::hal::timer::{Alarm, Alarm1};
 use crate::bsp::hal::{Sio, Timer};
 use crate::bsp::pac::{CorePeripherals, Peripherals, PIO0};
 use crate::pins::{Core1Pins, RgbPin, RotaryPin};
+use arraydeque::ArrayDeque;
 use core::sync::atomic::{AtomicU8, Ordering};
 use fugit::{ExtU32, MicrosDurationU32, RateExtU32};
 use keyberon::layout::Event;
-use kyria_kb2040::anim::{AnimKind, AnimationController};
+use kyria_kb2040::anim::{AnimKind, AnimationController, SwitchKind};
 use kyria_kb2040::cross_talk::{InterProcessCommand, InterProcessResponse};
-use kyria_kb2040::layout::CustomAction;
+use kyria_kb2040::layout::{CustomAction, PressEvent, SerializableEvent};
 use kyria_kb2040::log;
 use kyria_kb2040::rotary::update_last_rotary;
 use rotary_encoder_hal::Rotary;
@@ -114,6 +115,8 @@ pub(crate) fn core1_task() {
     }
 }
 
+static mut LED_STATES: ArrayDeque<AnimKind, 2> = ArrayDeque::new();
+
 #[interrupt]
 fn TIMER_IRQ_1() {
     use smart_leds::SmartLedsWrite;
@@ -131,15 +134,39 @@ fn TIMER_IRQ_1() {
 
     let state_val = state.load(Ordering::Acquire);
     state.store(0, Ordering::Release);
-    let custom_action = CustomAction::try_from(state_val);
-    if let Ok(Some(anim_state)) = custom_action.map(|custom_action| match custom_action {
-        CustomAction::QwertyLed => Some(AnimKind::Qwerty),
-        CustomAction::ColemakLed => Some(AnimKind::Colemak),
-        CustomAction::LayerSelectLed => Some(AnimKind::LayerSelect),
-        CustomAction::SymLed => Some(AnimKind::Sym),
-        _ => None,
-    }) {
-        anim_controller.set_state(anim_state);
+    if let Some(event) = SerializableEvent::deserialize(state_val) {
+        if let Some(anim_state) = match event.action {
+            CustomAction::QwertyLed => Some(AnimKind::Qwerty),
+            CustomAction::ColemakLed => Some(AnimKind::Colemak),
+            CustomAction::LayerSelectLed => Some(AnimKind::LayerSelect),
+            CustomAction::NumpadLed => Some(AnimKind::Num),
+            CustomAction::NavLed => Some(AnimKind::Nav),
+            CustomAction::SymLed => Some(AnimKind::Sym),
+            CustomAction::FunctionLed => Some(AnimKind::Function),
+            _ => None,
+        } {
+            if let (SwitchKind::Momentary, PressEvent::Press) =
+                (anim_state.switch_kind(), event.event)
+            {
+                unsafe {
+                    LED_STATES.push_back(anim_controller.state()).unwrap();
+                }
+                anim_controller.set_state(anim_state);
+            } else if let (SwitchKind::Momentary, PressEvent::Release) =
+                (anim_state.switch_kind(), event.event)
+            {
+                if anim_controller.state() == anim_state {
+                    if let Some(anim_state) = unsafe { LED_STATES.pop_front() } {
+                        anim_controller.set_state(anim_state);
+                    }
+                    unsafe {
+                        LED_STATES.clear();
+                    }
+                }
+            } else if let PressEvent::Press = event.event {
+                anim_controller.set_state(anim_state);
+            }
+        }
     }
 
     if anim_controller.tick(anim_millis) {

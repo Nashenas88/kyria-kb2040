@@ -2,20 +2,31 @@ use smart_leds::{RGB, RGB8};
 
 const NUM_LEDS: usize = 10;
 
+pub enum SwitchKind {
+    Momentary,
+    Toggle,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AnimKind {
     Boot,
     Colemak,
     Qwerty,
     LayerSelect,
+    Num,
+    Nav,
     Sym,
+    Function,
 }
 
 const BOOT_ANIM_MS: u32 = 2000;
 const COLEMAK_ANIM_MS: u32 = 3000;
 const QWERTY_ANIM_MS: u32 = 3000;
 const LAYER_SELECT_ANIM_MS: u32 = 1000;
+const NUM_ANIM_MS: u32 = 3000;
+const NAV_ANIM_MS: u32 = 3000;
 const SYM_ANIM_MS: u32 = 3000;
+const FUNCTION_ANIM_MS: u32 = 3000;
 const TRANSITION_MS: u32 = 750;
 const GAUSS_STD_DEV: u32 = 75;
 
@@ -23,13 +34,30 @@ impl AnimKind {
     fn new() -> AnimKind {
         AnimKind::Boot
     }
+
     fn anim_time_ms(&self) -> u32 {
         match self {
             AnimKind::Boot => BOOT_ANIM_MS,
             AnimKind::Colemak => COLEMAK_ANIM_MS,
             AnimKind::Qwerty => QWERTY_ANIM_MS,
             AnimKind::LayerSelect => LAYER_SELECT_ANIM_MS,
+            AnimKind::Num => NUM_ANIM_MS,
+            AnimKind::Nav => NAV_ANIM_MS,
             AnimKind::Sym => SYM_ANIM_MS,
+            AnimKind::Function => FUNCTION_ANIM_MS,
+        }
+    }
+
+    pub fn switch_kind(&self) -> SwitchKind {
+        match self {
+            AnimKind::Boot => SwitchKind::Momentary,
+            AnimKind::Colemak => SwitchKind::Toggle,
+            AnimKind::Qwerty => SwitchKind::Toggle,
+            AnimKind::LayerSelect => SwitchKind::Momentary,
+            AnimKind::Num => SwitchKind::Toggle,
+            AnimKind::Nav => SwitchKind::Toggle,
+            AnimKind::Sym => SwitchKind::Toggle,
+            AnimKind::Function => SwitchKind::Toggle,
         }
     }
 }
@@ -89,8 +117,23 @@ impl AnimState {
                 }
                 leds
             }
+            AnimKind::Num => ease_out::<{ NUM_ANIM_MS as usize }>(self.anim_ms, |i, p| {
+                yellow(inverted(
+                    gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
+                ))
+            }),
+            AnimKind::Nav => ease_out::<{ NAV_ANIM_MS as usize }>(self.anim_ms, |i, p| {
+                orange(inverted(
+                    gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
+                ))
+            }),
             AnimKind::Sym => ease_out::<{ SYM_ANIM_MS as usize }>(self.anim_ms, |i, p| {
                 green(inverted(
+                    gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
+                ))
+            }),
+            AnimKind::Function => ease_out::<{ SYM_ANIM_MS as usize }>(self.anim_ms, |i, p| {
+                purple(inverted(
                     gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
                 ))
             }),
@@ -144,6 +187,22 @@ fn green(c: u8) -> RGB8 {
 
 fn blue(c: u8) -> RGB8 {
     RGB { r: 0, g: 0, b: c }
+}
+
+fn purple(c: u8) -> RGB8 {
+    RGB { r: c, g: 0, b: c }
+}
+
+fn yellow(c: u8) -> RGB8 {
+    RGB { r: c, g: c, b: 0 }
+}
+
+fn orange(c: u8) -> RGB8 {
+    RGB {
+        r: c,
+        g: c / 2,
+        b: 0,
+    }
 }
 
 fn rainbow_wheel(t: f32) -> RGB8 {
@@ -253,7 +312,6 @@ impl AnimationController {
         self.state.tick(delta_ms)
     }
 
-    #[allow(dead_code)]
     pub fn state(&self) -> AnimKind {
         let (InternalState::Steady(state) | InternalState::Transition(_, state, _)) = self.state;
         state.kind

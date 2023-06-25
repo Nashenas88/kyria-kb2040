@@ -44,6 +44,7 @@ use keyberon::key_code;
 use keyberon::layout::{Event, Layout};
 use keyberon::matrix::Matrix;
 use kyria_kb2040::cross_talk::{InterProcessCommand, InterProcessResponse};
+use kyria_kb2040::layout::CustomEventExt;
 use kyria_kb2040::layout::{CustomAction, NCOLS, NLAYERS, NROWS};
 use kyria_kb2040::leds::UsualLeds;
 use kyria_kb2040::{cross_talk, log, media};
@@ -561,26 +562,33 @@ mod app {
         let (report, media_report): (key_code::KbHidReport, Option<MediaKeyboardReport>) =
             (layout, i2c0).lock(|l, i2c| {
                 let media_report = match l.tick() {
-                    keyberon::layout::CustomEvent::Press(&custom_action) => {
+                    // update led state, communicate to other half
+                    ref event @ keyberon::layout::CustomEvent::Press(ref custom_action) => {
                         if custom_action.is_led() {
-                            let serialized = custom_action.into();
+                            let serialized = event.serialize();
                             let Either::Right(i2c) = i2c else {
                                 log::unreachable!();
                             };
                             if let Err(e) = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]) {
                                 log::error!("Failed to write to left side over i2c: {:?}", e);
-                            } else {
-                                LED_STATE.store(serialized, Ordering::Relaxed);
                             }
-                            // update led state, communicate to other half
+                            LED_STATE.store(serialized, Ordering::Relaxed);
 
                             None
                         } else {
-                            media::media_report_for_action(custom_action)
+                            media::media_report_for_action(**custom_action)
                         }
                     }
-                    keyberon::layout::CustomEvent::Release(&custom_action) => {
+                    ref event @ keyberon::layout::CustomEvent::Release(ref custom_action) => {
                         if custom_action.is_led() {
+                            let serialized = event.serialize();
+                            let Either::Right(i2c) = i2c else {
+                                log::unreachable!();
+                            };
+                            if let Err(e) = i2c.write(I2C_PERIPHERAL_ADDR, &[SET_UI, serialized]) {
+                                log::error!("Failed to write to left side over i2c: {:?}", e);
+                            }
+                            LED_STATE.store(serialized, Ordering::Relaxed);
                             None
                         } else {
                             Some(media::release_for_media_action())

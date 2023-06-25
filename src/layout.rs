@@ -1,5 +1,6 @@
 use keyberon::action::{self, d, l, HoldTapAction};
 use keyberon::key_code::KeyCode;
+use keyberon::layout::CustomEvent;
 
 // TODO: split into media, led variants and new enums.
 #[allow(clippy::enum_variant_names)]
@@ -40,18 +41,58 @@ impl CustomAction {
     }
 }
 
-impl TryFrom<u8> for CustomAction {
-    type Error = ();
-    fn try_from(a: u8) -> Result<Self, Self::Error> {
-        Ok(match a {
+pub trait CustomEventExt {
+    fn serialize(&self) -> u8;
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum PressEvent {
+    Press,
+    Release,
+}
+
+pub struct SerializableEvent {
+    pub action: CustomAction,
+    pub event: PressEvent,
+}
+
+const PRESS_BIT: u8 = 0b1000_0000;
+const RELEASE_BIT: u8 = 0b0100_0000;
+const EVENT_MASK: u8 = 0b1100_0000;
+const ACTION_MASK: u8 = 0b0011_1111;
+
+impl SerializableEvent {
+    pub fn deserialize(a: u8) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        // NOTE: Keep in sync with serialize below!
+        let action = match a & ACTION_MASK {
             1 => CustomAction::QwertyLed,
             2 => CustomAction::ColemakLed,
             3 => CustomAction::LayerSelectLed,
             4 => CustomAction::NumpadLed,
             5 => CustomAction::NavLed,
             6 => CustomAction::SymLed,
-            _ => return Err(()),
-        })
+            7 => CustomAction::FunctionLed,
+            _ => return None,
+        };
+        let event = match a & EVENT_MASK {
+            PRESS_BIT => PressEvent::Press,
+            RELEASE_BIT => PressEvent::Release,
+            _ => return None,
+        };
+        Some(SerializableEvent { action, event })
+    }
+}
+
+impl CustomEventExt for CustomEvent<CustomAction> {
+    fn serialize(&self) -> u8 {
+        match self {
+            CustomEvent::NoEvent => unreachable!(),
+            CustomEvent::Press(action) => u8::from(**action) | PRESS_BIT,
+            CustomEvent::Release(action) => u8::from(**action) | RELEASE_BIT,
+        }
     }
 }
 
@@ -64,6 +105,7 @@ impl From<CustomAction> for u8 {
             CustomAction::NumpadLed => 4,
             CustomAction::NavLed => 5,
             CustomAction::SymLed => 6,
+            CustomAction::FunctionLed => 7,
             _ => panic!("only led codes can serialize to integer"),
         }
     }
