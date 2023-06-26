@@ -25,8 +25,8 @@ usbd-hid = { git = "https://github.com/twitchyliquid64/usbd-hid", rev = "71632de
 
 # Led support
 smart-leds = "0.3.0"
-# ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "0b0dbb035e220954300475784ac6fe3ab7f4ab9b" }
-ws2812-pio = { path = "..//ws2812-pio-rs" }
+# ithinuel's experimental-gpio-overhaul branch as of June 25, 2023
+ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "40b475d46603af89998680f40f2e137b76e46519" }
 nb = "1.0.0"
 pio = "0.2.0"
 
@@ -34,9 +34,10 @@ pio = "0.2.0"
 # adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal-boards", branch = "hal-0.9", optional = true }
 # sparkfun-pro-micro-rp2040 = { git = "https://github.com/rp-rs/rp-hal-boards", branch = "hal-0.9", optional = true }
 # rp-pico = { git = "https://github.com/rp-rs/rp-hal-boards", branch = "hal-0.9", optional = true }
-adafruit-kb2040 = { path = "../rp-hal-boards/boards/adafruit-kb2040", optional = true }
-sparkfun-pro-micro-rp2040 = { path = "../rp-hal-boards/boards/sparkfun-pro-micro-rp2040", optional = true }
-rp-pico = { path = "../rp-hal-boards/boards/rp-pico", optional = true }
+# ithinuel's experimental-gpio-overhaul branch as of June 25, 2023
+adafruit-kb2040 = { git = "https://github.com/ithinuel/rp-hal-boards", rev = "a6fbf5451379aa8b47d50fd6da38c5c6964bcfaf", optional = true }
+sparkfun-pro-micro-rp2040 = { git = "https://github.com/ithinuel/rp-hal-boards", rev = "a6fbf5451379aa8b47d50fd6da38c5c6964bcfaf", optional = true }
+rp-pico = { git = "https://github.com/ithinuel/rp-hal-boards", rev = "a6fbf5451379aa8b47d50fd6da38c5c6964bcfaf", optional = true }
 
 # This revision supports hold tap, easier to use.
 keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "24bd53f850bb5f07b1eee36fe3ac75082d439c10" }
@@ -122,8 +123,4 @@ lto = 'fat'
 opt-level = 3
 
 [patch.crates-io]
-# rp2040-hal = { git = "https://github.com/nashenas88/rp-hal", branch = "i2c-irq" }
-rp2040-hal = { path = "../rp-hal/rp2040-hal", version = "0.9.0" }
-adafruit-kb2040 = { path = "../rp-hal-boards/boards/adafruit-kb2040", version = "0.6.0" }
-sparkfun-pro-micro-rp2040 = { path = "../rp-hal-boards/boards/sparkfun-pro-micro-rp2040", version = "0.6.0" }
-rp-pico = { path = "../rp-hal-boards/boards/rp-pico", version = "0.7.0" }
+rp2040-hal = { git = "https://github.com/nashenas88/rp-hal", branch = "i2c-irq" }
