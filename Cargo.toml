@@ -38,6 +38,8 @@ pio = "0.2.0"
 adafruit-kb2040 = { git = "https://github.com/ithinuel/rp-hal-boards", rev = "a6fbf5451379aa8b47d50fd6da38c5c6964bcfaf", optional = true }
 sparkfun-pro-micro-rp2040 = { git = "https://github.com/ithinuel/rp-hal-boards", rev = "a6fbf5451379aa8b47d50fd6da38c5c6964bcfaf", optional = true }
 rp-pico = { git = "https://github.com/ithinuel/rp-hal-boards", rev = "a6fbf5451379aa8b47d50fd6da38c5c6964bcfaf", optional = true }
+rp2040-hal = { git = "https://github.com/nashenas88/rp-hal", branch = "i2c-irq" }
+
 
 # This revision supports hold tap, easier to use.
 keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "24bd53f850bb5f07b1eee36fe3ac75082d439c10" }
@@ -64,7 +66,7 @@ tracing = "0.1.25"
 "kb2040" = ["adafruit-kb2040", "panic-halt"]
 "sf2040" = ["sparkfun-pro-micro-rp2040", "panic-halt"]
 "pico" = ["rp-pico", "defmt", "panic-probe"]
-"defmt" = ["dep:defmt", "defmt-rtt"]
+"defmt" = ["dep:defmt", "defmt-rtt", "rp2040-hal/defmt"]
 "std" = []
 "debug" = []
 

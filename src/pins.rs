@@ -22,6 +22,53 @@ pub(crate) type RgbPin = Pin<Gpio0, FunctionPio0, PullDown>;
 #[cfg(feature = "pico")]
 pub(crate) type RgbPin = Pin<Gpio17, FunctionPio0, PullDown>;
 
+#[cfg(any(feature = "kb2040", feature = "sf2040"))]
+pub(crate) type DisplayI2cSda = Pin<Gpio2, FunctionI2C, PullUp>;
+#[cfg(any(feature = "kb2040", feature = "sf2040"))]
+pub(crate) type DisplayI2cScl = Pin<Gpio3, FunctionI2C, PullUp>;
+#[cfg(feature = "pico")]
+pub(crate) type DisplayI2cSda = Pin<Gpio18, FunctionI2C, PullUp>;
+#[cfg(feature = "pico")]
+pub(crate) type DisplayI2cScl = Pin<Gpio19, FunctionI2C, PullUp>;
+
+#[cfg(feature = "kb2040")]
+pub(crate) type CommsI2cSda = Pin<Gpio12, FunctionI2C, PullUp>;
+#[cfg(feature = "kb2040")]
+pub(crate) type CommsI2cScl = Pin<Gpio1, FunctionI2C, PullUp>;
+#[cfg(feature = "sf2040")]
+pub(crate) type CommsI2cSda = Pin<Gpio16, FunctionI2C, PullUp>;
+#[cfg(feature = "sf2040")]
+pub(crate) type CommsI2cScl = Pin<Gpio1, FunctionI2C, PullUp>;
+#[cfg(feature = "pico")]
+pub(crate) type CommsI2cSda = Pin<Gpio20, FunctionI2C, PullUp>;
+#[cfg(feature = "pico")]
+pub(crate) type CommsI2cScl = Pin<Gpio21, FunctionI2C, PullUp>;
+
+#[cfg(feature = "kb2040")]
+pub(crate) type ControllerI2cSda = Pin<Gpio12, FunctionI2C, PullUp>;
+#[cfg(feature = "kb2040")]
+pub(crate) type ControllerI2cScl = Pin<Gpio1, FunctionI2C, PullUp>;
+#[cfg(feature = "sf2040")]
+pub(crate) type ControllerI2cSda = Pin<Gpio16, FunctionI2C, PullUp>;
+#[cfg(feature = "sf2040")]
+pub(crate) type ControllerI2cScl = Pin<Gpio1, FunctionI2C, PullUp>;
+#[cfg(feature = "pico")]
+pub(crate) type ControllerI2cSda = Pin<Gpio20, FunctionI2C, PullUp>;
+#[cfg(feature = "pico")]
+pub(crate) type ControllerI2cScl = Pin<Gpio21, FunctionI2C, PullUp>;
+
+#[cfg(feature = "kb2040")]
+pub(crate) type BootButton = Pin<Gpio11, FunctionSioInput, PullUp>;
+#[cfg(feature = "sf2040")]
+pub(crate) type BootButton = ();
+#[cfg(feature = "pico")]
+pub(crate) type BootButton = Pin<Gpio28, FunctionSioInput, PullUp>;
+
+#[cfg(feature = "pico")]
+pub(crate) type LedPin = Pin<Gpio25, FunctionSioOutput, PullNone>;
+#[cfg(not(feature = "pico"))]
+pub(crate) type LedPin = ();
+
 #[cfg(feature = "kb2040")]
 pub(crate) struct KeyboardPins {
     pub(crate) is_right: bool,
