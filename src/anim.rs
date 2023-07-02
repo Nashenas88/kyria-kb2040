@@ -17,6 +17,7 @@ pub enum AnimKind {
     Nav,
     Sym,
     Function,
+    Rainbow,
 }
 
 const BOOT_ANIM_MS: u32 = 2000;
@@ -27,6 +28,7 @@ const NUM_ANIM_MS: u32 = 3000;
 const NAV_ANIM_MS: u32 = 3000;
 const SYM_ANIM_MS: u32 = 3000;
 const FUNCTION_ANIM_MS: u32 = 3000;
+const RAINBOW_ANIM_MS: u32 = 1000;
 const TRANSITION_MS: u32 = 750;
 const GAUSS_STD_DEV: u32 = 75;
 
@@ -45,6 +47,7 @@ impl AnimKind {
             AnimKind::Nav => NAV_ANIM_MS,
             AnimKind::Sym => SYM_ANIM_MS,
             AnimKind::Function => FUNCTION_ANIM_MS,
+            AnimKind::Rainbow => RAINBOW_ANIM_MS,
         }
     }
 
@@ -56,8 +59,9 @@ impl AnimKind {
             AnimKind::LayerSelect => SwitchKind::Momentary,
             AnimKind::Num => SwitchKind::Toggle,
             AnimKind::Nav => SwitchKind::Toggle,
-            AnimKind::Sym => SwitchKind::Toggle,
+            AnimKind::Sym => SwitchKind::Momentary,
             AnimKind::Function => SwitchKind::Toggle,
+            AnimKind::Rainbow => SwitchKind::Toggle,
         }
     }
 }
@@ -105,7 +109,7 @@ impl AnimState {
                     gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
                 ))
             }),
-            AnimKind::LayerSelect => {
+            AnimKind::LayerSelect | AnimKind::Rainbow => {
                 let mut leds = [RGB8::default(); NUM_LEDS];
                 let pos = self.anim_ms as f32 / LAYER_SELECT_ANIM_MS as f32;
                 for (led, idx) in leds.iter_mut().zip(BOARD_LED_ORDER.into_iter()) {

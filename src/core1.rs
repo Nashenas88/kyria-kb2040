@@ -51,25 +51,20 @@ pub(crate) fn core1_task() {
     let peripheral_freq = sio.fifo.read_blocking();
     let state_addr = sio.fifo.read_blocking();
     let is_right = sio.fifo.read_blocking() != 0;
-    // Safety: Only written here, only read elsewhere.
-    unsafe { IS_RIGHT = is_right };
     let timer_addr = sio.fifo.read_blocking();
 
     // Safety: We know that the address is valid because it was sent by core0.
     let state: &'static AtomicU8 = unsafe { core::mem::transmute(state_addr) };
-    unsafe { STATE = Some(state) };
 
+    // Safety: We know that the address is valid because it was sent by core0.
     let timer: &'static Option<Timer> = unsafe { core::mem::transmute(timer_addr) };
-    // Clone the timer so we can safely use it mutably.
-    let mut timer: Timer = timer.as_ref().unwrap().clone();
+    // Copy the timer so we can safely use it mutably.
+    let mut timer: Timer = *timer.as_ref().unwrap();
 
-    // Use alarm1 as alarm0 is used for the scan timer on core0.
+    // Use alarm1 since alarm0 is used for the scan timer on core0.
     let mut alarm1 = timer.alarm_1().unwrap();
     alarm1.schedule(LED_ANIM_PERIOD_US.micros()).unwrap();
     alarm1.enable_interrupt();
-    unsafe {
-        ALARM1 = Some(alarm1);
-    }
 
     let Core1Pins {
         rgb,
@@ -84,28 +79,34 @@ pub(crate) fn core1_task() {
     };
     // Read rotary since sometimes the first read triggers a false positive.
     let _result = rotary.update();
-    // Safety: Nothing else is reading or writing this value right now.
-    unsafe {
-        ROTARY = Some(rotary);
-    }
     let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
     let peripheral_freq = peripheral_freq.Hz();
     let ws = Ws2812Direct::new(rgb, &mut pio, sm0, peripheral_freq);
     let anim_controller = AnimationController::new();
-    unsafe {
-        WS = Some(ws);
-    }
-    unsafe {
-        ANIM_CONTROLLER = Some(anim_controller);
-    }
 
-    // Safety: Nothing else is reading or writing this value right now.
+    // Safety: Interrupts are not enabled, nothing else is accessing these fields.
     unsafe {
+        IS_RIGHT = is_right;
+        STATE = Some(state);
+        ALARM1 = Some(alarm1);
+        ROTARY = Some(rotary);
+        WS = Some(ws);
+        ANIM_CONTROLLER = Some(anim_controller);
         SIO_FIFO = Some(sio.fifo);
     }
 
     // Unmask the alarm and fifo interrups so we can process requests from core 0.
     unsafe {
+        // We want sio to have the highest priority
+        // core.NVIC.set_priority(
+        //     pac::interrupt::SIO_IRQ_PROC1,
+        //     0 << (8 - pac::NVIC_PRIO_BITS),
+        // );
+        // // Followed by the timer.
+        // core.NVIC
+        //     .set_priority(pac::interrupt::TIMER_IRQ_1, 1 << (8 - pac::NVIC_PRIO_BITS));
+
+        // Unmask the interrupts so they can finally fire.
         pac::NVIC::unmask(pac::interrupt::TIMER_IRQ_1);
         pac::NVIC::unmask(pac::interrupt::SIO_IRQ_PROC1);
     }
@@ -124,13 +125,21 @@ fn TIMER_IRQ_1() {
     let anim_micros: MicrosDurationU32 = LED_ANIM_PERIOD_US.micros();
     let anim_millis = anim_micros.to_millis();
 
+    // Safety: ALARM1 is only accessed here after init.
     let alarm1 = unsafe { ALARM1.as_mut().unwrap() };
     alarm1.clear_interrupt();
     alarm1.schedule(anim_micros).unwrap();
 
-    let state = unsafe { STATE.as_ref().unwrap() };
-    let anim_controller = unsafe { ANIM_CONTROLLER.as_mut().unwrap() };
-    let ws = unsafe { WS.as_mut().unwrap() };
+    // Safety: STATE, ANIM_CONTROLLER, WS, and LED_STATES are only accessed here
+    // after init.
+    let (state, anim_controller, ws, led_states) = unsafe {
+        (
+            STATE.as_ref().unwrap(),
+            ANIM_CONTROLLER.as_mut().unwrap(),
+            WS.as_mut().unwrap(),
+            &mut LED_STATES,
+        )
+    };
 
     let state_val = state.load(Ordering::Acquire);
     state.store(0, Ordering::Release);
@@ -143,28 +152,29 @@ fn TIMER_IRQ_1() {
             CustomAction::NavLed => Some(AnimKind::Nav),
             CustomAction::SymLed => Some(AnimKind::Sym),
             CustomAction::FunctionLed => Some(AnimKind::Function),
+            CustomAction::RainbowLed => Some(AnimKind::Rainbow),
             _ => None,
         } {
             if let (SwitchKind::Momentary, PressEvent::Press) =
                 (anim_state.switch_kind(), event.event)
             {
-                unsafe {
-                    LED_STATES.push_back(anim_controller.state()).unwrap();
-                }
+                led_states.push_back(anim_controller.state()).unwrap();
                 anim_controller.set_state(anim_state);
             } else if let (SwitchKind::Momentary, PressEvent::Release) =
                 (anim_state.switch_kind(), event.event)
             {
                 if anim_controller.state() == anim_state {
-                    if let Some(anim_state) = unsafe { LED_STATES.pop_front() } {
+                    if let Some(anim_state) = led_states.pop_back() {
                         anim_controller.set_state(anim_state);
                     }
-                    unsafe {
-                        LED_STATES.clear();
-                    }
+                } else if led_states.back() == Some(&anim_state) {
+                    led_states.pop_back();
+                } else {
+                    led_states.clear();
                 }
             } else if let PressEvent::Press = event.event {
                 anim_controller.set_state(anim_state);
+                led_states.clear();
             }
         }
     }

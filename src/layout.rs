@@ -13,6 +13,7 @@ pub enum CustomAction {
     NavLed,
     SymLed,
     FunctionLed,
+    RainbowLed,
     MediaPlayPause,
     MediaNext,
     MediaBack,
@@ -30,7 +31,8 @@ impl CustomAction {
             | CustomAction::NumpadLed
             | CustomAction::NavLed
             | CustomAction::SymLed
-            | CustomAction::FunctionLed => true,
+            | CustomAction::FunctionLed
+            | CustomAction::RainbowLed => true,
             CustomAction::MediaPlayPause
             | CustomAction::MediaNext
             | CustomAction::MediaBack
@@ -75,6 +77,7 @@ impl SerializableEvent {
             5 => CustomAction::NavLed,
             6 => CustomAction::SymLed,
             7 => CustomAction::FunctionLed,
+            8 => CustomAction::RainbowLed,
             _ => return None,
         };
         let event = match a & EVENT_MASK {
@@ -96,6 +99,16 @@ impl CustomEventExt for CustomEvent<CustomAction> {
     }
 }
 
+impl CustomEventExt for SerializableEvent {
+    fn serialize(&self) -> u8 {
+        let event_bit = match self.event {
+            PressEvent::Press => PRESS_BIT,
+            PressEvent::Release => RELEASE_BIT,
+        };
+        u8::from(self.action) | event_bit
+    }
+}
+
 impl From<CustomAction> for u8 {
     fn from(action: CustomAction) -> Self {
         match action {
@@ -106,6 +119,7 @@ impl From<CustomAction> for u8 {
             CustomAction::NavLed => 5,
             CustomAction::SymLed => 6,
             CustomAction::FunctionLed => 7,
+            CustomAction::RainbowLed => 8,
             _ => panic!("only led codes can serialize to integer"),
         }
     }
@@ -128,7 +142,8 @@ const LAYER: Action = ma![CustomAction::LayerSelectLed, l(2)];
 const NUM_PAD: Action = ma![CustomAction::NumpadLed, d(3)];
 const NAV: Action = ma![CustomAction::NavLed, d(4)];
 const SYM: Action = ma![CustomAction::SymLed, l(5)];
-const FUNC: Action = ma![CustomAction::FunctionLed, l(6)];
+const FUNC: Action = ma![CustomAction::FunctionLed, d(6)];
+const RBOW: Action = Action::Custom(CustomAction::RainbowLed);
 
 const MP: Action = Action::Custom(CustomAction::MediaPlayPause);
 const MN: Action = Action::Custom(CustomAction::MediaNext);
@@ -242,7 +257,7 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
             [n     {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter  Delete {SYM}  {VD}   {VM}   {VU}     n     ]
         }
         { // (2) Layer Selector
-            [t  t       t    t        t        t n  n          n      n  t  t        t        t    t       t]
+            [t  t       t    t       {RBOW}    t n  n          n      n  t {RBOW}    t        t    t       t]
             [t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t n  n          n      n  t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
             [t  t       t    t       {FUNC}    t t  t          t      t  t {FUNC}    t        t    t       t]
             [n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
