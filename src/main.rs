@@ -3,18 +3,14 @@
 #![no_std]
 #![no_main]
 
-use crate::pins::{get_pins, ColPin, RowPin};
+use crate::pins::{
+    get_pins, BootButton, ColPin, CommsI2cScl, CommsI2cSda, ControllerI2cScl, ControllerI2cSda,
+    DisplayI2cScl, DisplayI2cSda, LedPin, RowPin,
+};
 #[cfg(feature = "kb2040")]
 use adafruit_kb2040 as bsp;
 use arraydeque::{behavior, ArrayDeque};
 use bsp::hal::clocks::init_clocks_and_plls;
-#[cfg(feature = "kb2040")]
-use bsp::hal::gpio::bank0::{Gpio1, Gpio11, Gpio12, Gpio2, Gpio25, Gpio3};
-#[cfg(feature = "sf2040")]
-use bsp::hal::gpio::bank0::{Gpio1, Gpio16, Gpio2, Gpio25, Gpio3};
-#[cfg(feature = "pico")]
-use bsp::hal::gpio::bank0::{Gpio18, Gpio19, Gpio20, Gpio21, Gpio25, Gpio28};
-use bsp::hal::gpio::{FunctionI2C, FunctionSioInput, FunctionSioOutput, Pin, PullNone, PullUp};
 use bsp::hal::i2c::peripheral::{I2CEvent, I2CPeripheralEventIterator};
 use bsp::hal::multicore::{Multicore, Stack};
 use bsp::hal::sio::SioFifo;
@@ -70,108 +66,15 @@ use usbd_hid::hid_class::HIDClass;
 mod core1;
 mod pins;
 
-#[cfg(feature = "kb2040")]
-type I2C0Controller = I2C<
-    I2C0,
-    (
-        Pin<Gpio12, FunctionI2C, PullUp>,
-        Pin<Gpio1, FunctionI2C, PullUp>,
-    ),
->;
-#[cfg(feature = "sf2040")]
-type I2C0Controller = I2C<
-    I2C0,
-    (
-        Pin<Gpio16, FunctionI2C, PullUp>,
-        Pin<Gpio1, FunctionI2C, PullUp>,
-    ),
->;
-#[cfg(feature = "pico")]
-type I2C0Controller = I2C<
-    I2C0,
-    (
-        Pin<Gpio20, FunctionI2C, PullUp>,
-        Pin<Gpio21, FunctionI2C, PullUp>,
-    ),
->;
-
-#[cfg(feature = "kb2040")]
+type I2C0Controller = I2C<I2C0, (ControllerI2cSda, ControllerI2cScl)>;
 type Display = Ssd1306<
-    I2CInterface<
-        I2C<
-            I2C1,
-            (
-                Pin<Gpio2, FunctionI2C, PullUp>,
-                Pin<Gpio3, FunctionI2C, PullUp>,
-            ),
-        >,
-    >,
+    I2CInterface<I2C<I2C1, (DisplayI2cSda, DisplayI2cScl)>>,
     DisplaySize128x64,
     TerminalMode,
 >;
-#[cfg(feature = "sf2040")]
-type Display = Ssd1306<
-    I2CInterface<
-        I2C<
-            I2C1,
-            (
-                Pin<Gpio2, FunctionI2C, PullUp>,
-                Pin<Gpio3, FunctionI2C, PullUp>,
-            ),
-        >,
-    >,
-    DisplaySize128x64,
-    TerminalMode,
->;
-#[cfg(feature = "pico")]
-type Display = Ssd1306<
-    I2CInterface<
-        I2C<
-            I2C1,
-            (
-                Pin<Gpio18, FunctionI2C, PullUp>,
-                Pin<Gpio19, FunctionI2C, PullUp>,
-            ),
-        >,
-    >,
-    DisplaySize128x64,
-    TerminalMode,
->;
-
-#[cfg(feature = "kb2040")]
-type I2CPeripheral = I2CPeripheralEventIterator<
-    I2C0,
-    (
-        Pin<Gpio12, FunctionI2C, PullUp>,
-        Pin<Gpio1, FunctionI2C, PullUp>,
-    ),
->;
-#[cfg(feature = "sf2040")]
-type I2CPeripheral = I2CPeripheralEventIterator<
-    I2C0,
-    (
-        Pin<Gpio16, FunctionI2C, PullUp>,
-        Pin<Gpio1, FunctionI2C, PullUp>,
-    ),
->;
-#[cfg(feature = "pico")]
-type I2CPeripheral = I2CPeripheralEventIterator<
-    I2C0,
-    (
-        Pin<Gpio20, FunctionI2C, PullUp>,
-        Pin<Gpio21, FunctionI2C, PullUp>,
-    ),
->;
-
+type I2CPeripheral = I2CPeripheralEventIterator<I2C0, (CommsI2cSda, CommsI2cScl)>;
 type I2CController = I2C0Controller;
 type ScannedKeys = ArrayDeque<u8, BOARD_MAX_KEYS, behavior::Wrapping>;
-
-#[cfg(feature = "kb2040")]
-type BootButton = Pin<Gpio11, FunctionSioInput, PullUp>;
-#[cfg(feature = "sf2040")]
-type BootButton = ();
-#[cfg(feature = "pico")]
-type BootButton = Pin<Gpio28, FunctionSioInput, PullUp>;
 
 const NCOL_PINS: usize = 8;
 type PressedKeys = [[bool; NCOL_PINS]; NROWS];
@@ -264,7 +167,7 @@ mod app {
         #[cfg(any(feature = "pico", feature = "kb2040"))]
         boot_button: BootButton,
         #[cfg(feature = "pico")]
-        led: Pin<Gpio25, FunctionSioOutput, PullNone>,
+        led: LedPin,
         sio_fifo: SioFifo,
     }
 
