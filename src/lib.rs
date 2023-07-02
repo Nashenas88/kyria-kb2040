@@ -8,4 +8,5 @@ pub mod layout;
 pub mod leds;
 pub mod log;
 pub mod media;
+pub mod pong;
 pub mod rotary;
