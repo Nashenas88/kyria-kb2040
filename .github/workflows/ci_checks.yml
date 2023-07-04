@@ -39,8 +39,8 @@ jobs:
     name: Linting
     runs-on: ubuntu-latest
     steps:
-      - name: Install pango for druid deps
-        run: sudo apt-get install -y libpango1.0-dev
+      - name: Install ubuntu packages for druid
+        run: sudo apt-get install -y libpango1.0-dev libgtk-3-dev
       - uses: actions/checkout@v2
         with:
           submodules: true
