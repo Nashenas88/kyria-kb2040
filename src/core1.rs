@@ -359,7 +359,7 @@ fn TIMER_IRQ_2() {
     let rosc = unsafe { ROSC.as_mut().unwrap() };
 
     // If pong mode was turned off, then disable the display.
-    cortex_m::interrupt::free(|_| {
+    if cortex_m::interrupt::free(|_| {
         if !PONG_MODE.load(Ordering::Relaxed) {
             draw_rust(display);
             *pong = None;
@@ -367,9 +367,13 @@ fn TIMER_IRQ_2() {
                 unreachable!();
             };
             *rosc = RoscState::Disabled(r.disable());
-            return;
+            true
+        } else {
+            false
         }
-    });
+    }) {
+        return;
+    }
 
     // Pong mode is still on, reschedule.
     alarm2.schedule(PONG_PERIOD_US.micros()).unwrap();

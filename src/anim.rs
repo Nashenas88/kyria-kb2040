@@ -474,19 +474,19 @@ const EASE_OUT: [u16; 334] = [
 #[inline(always)]
 fn exp_approx(mut x: f32) -> f32 {
     const A: f32 = (1 << 23) as f32 / core::f32::consts::LN_2;
-    const B: f32 = (1 << 23) as f32 * (127.0 - 0.043677448);
+    const B: f32 = (1 << 23) as f32 * (127.0 - 0.04367745);
     x = A * x + B;
 
     const C: f32 = (1 << 23) as f32;
     const D: f32 = (1 << 23) as f32 * 255.0;
-    if x < C || x > D {
+    if !(C..=D).contains(&x) {
         x = if x < C { 0.0 } else { D };
     }
 
     let n: u32 = x as u32;
     x = unsafe { core::mem::transmute_copy(&n) };
     // memcpy(&x, &n, 4);
-    return x;
+    x
 }
 
 #[cfg(test)]

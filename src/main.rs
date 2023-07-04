@@ -102,9 +102,9 @@ where
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static LED_STATE: AtomicU8 = AtomicU8::new(0);
-static LED_STATE_REF: &'static AtomicU8 = &LED_STATE;
+static LED_STATE_REF: &AtomicU8 = &LED_STATE;
 static mut TIMER: Option<Timer> = None;
-static TIMER_ADDR: &'static Option<Timer> = unsafe { &TIMER };
+static TIMER_ADDR: &Option<Timer> = unsafe { &TIMER };
 
 // Rtic entry point. Uses the kb2040's Peripheral Access API (pac), and uses the
 // PIO0_IRQ_0 interrupt to dispatch to the handlers.
@@ -405,7 +405,7 @@ mod app {
             (layout, i2c0).lock(|l, i2c| {
                 let media_report = match l.tick() {
                     // update led state, communicate to other half
-                    ref event @ keyberon::layout::CustomEvent::Press(ref custom_action) => {
+                    ref event @ keyberon::layout::CustomEvent::Press(custom_action) => {
                         if custom_action.is_led() {
                             let serialized = event.serialize();
                             let Either::Right(i2c) = i2c else {
@@ -418,10 +418,10 @@ mod app {
 
                             None
                         } else {
-                            media::media_report_for_action(**custom_action)
+                            media::media_report_for_action(*custom_action)
                         }
                     }
-                    ref event @ keyberon::layout::CustomEvent::Release(ref custom_action) => {
+                    ref event @ keyberon::layout::CustomEvent::Release(custom_action) => {
                         if custom_action.is_led() {
                             let serialized = event.serialize();
                             let Either::Right(i2c) = i2c else {
@@ -510,6 +510,7 @@ mod app {
         ],
         local = [sio_fifo, boot_button, led]
     )]
+    #[allow(clippy::let_unit_value)]
     fn scan_timer_irq(c: scan_timer_irq::Context) {
         let mut alarm0 = c.shared.alarm0;
         #[cfg(any(feature = "kb2040", feature = "pico"))]

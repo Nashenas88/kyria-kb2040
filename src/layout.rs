@@ -58,10 +58,7 @@ impl CustomAction {
     }
 
     pub fn is_pong(&self) -> bool {
-        match self {
-            CustomAction::PongMode | CustomAction::PongEvent(_) => true,
-            _ => false,
-        }
+        matches!(self, CustomAction::PongMode | CustomAction::PongEvent(_))
     }
 }
 
