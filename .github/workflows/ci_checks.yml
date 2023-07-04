@@ -47,23 +47,30 @@ jobs:
           toolchain: stable
           components: clippy
       - run: rustup target install thumbv6m-none-eabi
-      - uses: actions-rs/clippy-check@v1
+      - name: Clippy kb2040
+        uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --no-default-features --features kb2040 -- -D warnings
-      - uses: actions-rs/clippy-check@v1
+      - name: Clippy sf2040
+        uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --no-default-features --features sf2040 -- -D warnings
-      - uses: actions-rs/clippy-check@v1
+      - name: Clippy pico
+        uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --no-default-features --features pico -- -D warnings
-      - uses: actions-rs/clippy-check@v1
+      - name: Clippy tests
+        uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --tests --lib --target x86_64-unknown-linux-gnu --features std -- -D warnings
-      - uses: actions-rs/clippy-check@v1
+      - name: Install pango for core1_emulator
+        run: sudo apt-get install -y pango
+      - name: Clippy core1_emulator
+        uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --example core1_emulator --target x86_64-unknown-linux-gnu --features std -- -D warnings
