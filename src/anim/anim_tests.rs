@@ -16,7 +16,7 @@ fn test_anim() {
 
     anim.set_state(AnimKind::Colemak);
     assert!(!anim.tick(AnimKind::Colemak.anim_time_ms() - 1));
-    let leds = anim.leds();
+    let leds = anim.leds(true);
     assert!(leds.len() > 0);
     assert_matches!(
         anim.state,
@@ -28,7 +28,7 @@ fn test_anim() {
     assert!(anim.tick(1));
     anim.set_state(AnimKind::Qwerty);
     assert!(!anim.tick(200));
-    let leds = anim.leds();
+    let leds = anim.leds(true);
     assert!(leds.len() > 0);
     assert_matches!(
         anim.state,
@@ -45,7 +45,7 @@ fn test_anim() {
         )
     );
     anim.tick(TRANSITION_MS - 201);
-    let leds = anim.leds();
+    let leds = anim.leds(true);
     assert!(leds.len() > 0);
     assert_matches!(
         anim.state,
@@ -55,7 +55,7 @@ fn test_anim() {
         })
     );
     anim.tick(10_000);
-    let leds = anim.leds();
+    let leds = anim.leds(true);
     assert!(leds.len() == 10);
     assert_matches!(
         anim.state,

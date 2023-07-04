@@ -18,6 +18,10 @@ pub enum AnimKind {
     Sym,
     Function,
     Rainbow,
+    PongStart,
+    PongScoreLeft,
+    PongScoreRight,
+    Error(u8),
 }
 
 const BOOT_ANIM_MS: u32 = 2000;
@@ -31,6 +35,8 @@ const FUNCTION_ANIM_MS: u32 = 3000;
 const RAINBOW_ANIM_MS: u32 = 1000;
 const TRANSITION_MS: u32 = 750;
 const GAUSS_STD_DEV: u32 = 75;
+const PONG_START_MS: u32 = 4000;
+const PONG_SCORE_MS: u32 = 4000;
 
 impl AnimKind {
     fn new() -> AnimKind {
@@ -48,6 +54,9 @@ impl AnimKind {
             AnimKind::Sym => SYM_ANIM_MS,
             AnimKind::Function => FUNCTION_ANIM_MS,
             AnimKind::Rainbow => RAINBOW_ANIM_MS,
+            AnimKind::PongStart => PONG_START_MS,
+            AnimKind::PongScoreLeft | AnimKind::PongScoreRight => PONG_SCORE_MS,
+            AnimKind::Error(e) => (e + 1) as u32 * 1000,
         }
     }
 
@@ -62,6 +71,10 @@ impl AnimKind {
             AnimKind::Sym => SwitchKind::Momentary,
             AnimKind::Function => SwitchKind::Toggle,
             AnimKind::Rainbow => SwitchKind::Toggle,
+            AnimKind::PongStart => SwitchKind::Toggle,
+            AnimKind::PongScoreLeft => SwitchKind::Toggle,
+            AnimKind::PongScoreRight => SwitchKind::Toggle,
+            AnimKind::Error(_) => SwitchKind::Toggle,
         }
     }
 }
@@ -75,6 +88,7 @@ impl Default for AnimKind {
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AnimState {
     kind: AnimKind,
+    /// Current number of milliseconds into the current animation.
     anim_ms: u32,
 }
 
@@ -96,7 +110,7 @@ impl AnimState {
         }
     }
 
-    pub fn leds(&self) -> [RGB8; NUM_LEDS] {
+    pub fn leds(&self, is_right: bool) -> [RGB8; NUM_LEDS] {
         match self.kind {
             AnimKind::Boot => self.boot_leds(),
             AnimKind::Colemak => ease_out::<{ COLEMAK_ANIM_MS as usize }>(self.anim_ms, |i, p| {
@@ -141,6 +155,34 @@ impl AnimState {
                     gaussian::<GAUSS_STD_DEV>(i as u16 * 50 + 200, p) as u8
                 ))
             }),
+            AnimKind::PongStart => solid(RGB {
+                r: 255,
+                g: 255,
+                b: 255,
+            }),
+            AnimKind::PongScoreLeft => {
+                if is_right {
+                    solid(RGB { r: 0, g: 0, b: 0 })
+                } else {
+                    solid(RGB {
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                    })
+                }
+            }
+            AnimKind::PongScoreRight => {
+                if is_right {
+                    solid(RGB {
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                    })
+                } else {
+                    solid(RGB { r: 0, g: 0, b: 0 })
+                }
+            }
+            AnimKind::Error(e) => error(e, self.anim_ms),
         }
     }
 
@@ -260,6 +302,25 @@ fn ease_out<const ANIM_MS: usize>(t: u32, color: impl Fn(u8, u16) -> RGB8) -> [R
     leds
 }
 
+fn error(e: u8, anim_ms: u32) -> [RGB8; NUM_LEDS] {
+    let half_secs = anim_ms / 250;
+    if half_secs >= e as u32 * 2 || half_secs % 2 == 1 {
+        [RGB8::default(); NUM_LEDS]
+    } else {
+        [RGB8 { r: 255, g: 0, b: 0 }; NUM_LEDS]
+    }
+}
+
+// fn marquee<const ANIM_MS: usize>(t: u32, color: impl Fn(u8, u16) -> RGB8) -> [RGB8; NUM_LEDS] {
+//     let mut leds = [RGB8::default(); NUM_LEDS];
+
+//     leds
+// }
+
+fn solid(color: RGB8) -> [RGB8; NUM_LEDS] {
+    [color; NUM_LEDS]
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum InternalState {
     Steady(AnimState),
@@ -297,11 +358,11 @@ impl AnimationController {
         }
     }
 
-    pub fn leds(&self) -> [RGB8; NUM_LEDS] {
+    pub fn leds(&self, is_right: bool) -> [RGB8; NUM_LEDS] {
         match self.state {
-            InternalState::Steady(state) => state.leds(),
+            InternalState::Steady(state) => state.leds(is_right),
             InternalState::Transition(from, to, t) => {
-                self.leds_for_transition(&from.leds(), &to.leds(), t)
+                self.leds_for_transition(&from.leds(is_right), &to.leds(is_right), t)
             }
         }
     }

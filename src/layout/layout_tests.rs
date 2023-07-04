@@ -8,9 +8,15 @@ use test_case::test_case;
 #[test_case(CustomAction::NumpadLed; "NumpadLed")]
 #[test_case(CustomAction::NavLed; "NavLed")]
 #[test_case(CustomAction::SymLed; "SymLed")]
+#[test_case(CustomAction::FunctionLed; "FunctionLed")]
+#[test_case(CustomAction::RainbowLed; "RainbowLed")]
+#[test_case(CustomAction::PongMode; "PongMode")]
+#[test_case(CustomAction::PongEvent(PongEvent::Start); "PongEventStart")]
+#[test_case(CustomAction::PongEvent(PongEvent::ScoreLeft); "PongEventScoreLeft")]
+#[test_case(CustomAction::PongEvent(PongEvent::ScoreRight); "PongEventScoreRight")]
 fn custom_action_serialize(action: CustomAction) {
-    let byte = u8::from(action);
-    let action2 = CustomAction::try_from(byte);
+    let half_word = u8::from(action);
+    let action2 = CustomAction::try_from(half_word);
     assert_eq!(action2, Ok(action));
 }
 
@@ -36,6 +42,27 @@ fn custom_action_is_not_led(action: CustomAction) {
 
 #[test]
 fn rotary_keys() {
+    let mut layout = Layout::new(&LAYERS);
+    layout.event(Event::Press(3, 14));
+    let event = layout.tick();
+    assert_eq!(event, CustomEvent::Press(&CustomAction::MediaVolumeUp));
+
+    layout.event(Event::Release(3, 14));
+    let event = layout.tick();
+    assert_eq!(event, CustomEvent::Release(&CustomAction::MediaVolumeUp));
+    let mut layout = Layout::new(&LAYERS);
+
+    layout.event(Event::Press(3, 12));
+    let event = layout.tick();
+    assert_eq!(event, CustomEvent::Press(&CustomAction::MediaVolumeDown));
+
+    layout.event(Event::Release(3, 12));
+    let event = layout.tick();
+    assert_eq!(event, CustomEvent::Release(&CustomAction::MediaVolumeDown));
+}
+
+#[test]
+fn erroc() {
     let mut layout = Layout::new(&LAYERS);
     layout.event(Event::Press(3, 14));
     let event = layout.tick();

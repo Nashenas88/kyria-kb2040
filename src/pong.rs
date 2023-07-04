@@ -1,12 +1,12 @@
 use rand::RngCore;
 
-pub const BALL_RADIUS: f32 = 1.0;
-pub const PADDLE_HEIGHT: f32 = 32.0;
-pub const PADDLE_WIDTH: f32 = 2.0;
-const LEFT_PADDLE_X: u8 = PADDLE_WIDTH as u8 >> 1;
-const RIGHT_PADDLE_X: u8 = SCREEN_WIDTH - LEFT_PADDLE_X;
-const SCREEN_HEIGHT: u8 = 64;
-const SCREEN_WIDTH: u8 = 128;
+pub const BALL_RADIUS: f32 = 2.0;
+pub const PADDLE_HEIGHT: f32 = 16.0;
+pub const PADDLE_WIDTH: f32 = 3.0;
+pub const LEFT_PADDLE_X: u8 = PADDLE_WIDTH as u8 >> 1;
+pub const RIGHT_PADDLE_X: u8 = SCREEN_WIDTH - 1 - LEFT_PADDLE_X;
+pub const SCREEN_HEIGHT: u8 = 64;
+pub const SCREEN_WIDTH: u8 = 128;
 // How far from the edge to the angled bounces happen?
 const ANGLE_START: f32 = 0.2;
 const PADDLE_ANGLE_START: f32 = PADDLE_HEIGHT * ANGLE_START;
@@ -49,12 +49,15 @@ impl Pong {
 }
 
 impl Pong {
-    pub fn tick<R>(&mut self, rng_core: &mut R, left: i8, right: i8)
+    pub fn tick<R>(&mut self, rng_core: &mut R, left: i8, right: i8) -> bool
     where
         R: RngCore,
     {
         if let Some(state) = self.state.update(rng_core, left, right) {
             self.state = state;
+            true
+        } else {
+            false
         }
     }
 }
@@ -101,6 +104,12 @@ where
 
 #[derive(Copy, Clone)]
 pub struct StartState(PlayState);
+
+impl StartState {
+    pub fn play_state(&self) -> &PlayState {
+        &self.0
+    }
+}
 
 impl<R> Tick<R> for StartState
 where
@@ -178,7 +187,7 @@ impl Ball {
             self.vel.x *= -1.0;
         }
 
-        if self.bottom() < 0.0 || self.top() > SCREEN_HEIGHT as f32 {
+        if self.bottom() < BALL_RADIUS || self.top() > (SCREEN_HEIGHT as f32 - 1.0 - BALL_RADIUS) {
             self.vel.y *= -1.0;
         }
     }
@@ -281,14 +290,16 @@ where
         self.ball.r#move();
 
         if abs(self.ball.pos.x) < core::f32::EPSILON {
-            self.left_score += 1;
+            self.right_score += 1;
             Some(StateMachine::Score(ScoreState::new(
+                true,
                 self.left_score,
                 self.right_score,
             )))
         } else if self.ball.pos.x == SCREEN_WIDTH as f32 - 1.0 {
-            self.right_score += 1;
+            self.left_score += 1;
             Some(StateMachine::Score(ScoreState::new(
+                false,
                 self.left_score,
                 self.right_score,
             )))
@@ -303,18 +314,33 @@ const COUNT_DOWN_S: u8 = 3;
 
 #[derive(Copy, Clone)]
 pub struct ScoreState {
+    /// True when right scores, false when left scores.
+    right_scored: bool,
     left_score: u8,
     right_score: u8,
     count_down: u8,
 }
 
 impl ScoreState {
-    fn new(left: u8, right: u8) -> Self {
+    fn new(right_scored: bool, left: u8, right: u8) -> Self {
         Self {
+            right_scored,
             left_score: left,
             right_score: right,
             count_down: COUNT_DOWN_S,
         }
+    }
+
+    pub fn right_scored(&self) -> bool {
+        self.right_scored
+    }
+
+    pub fn left_score(&self) -> u8 {
+        self.left_score
+    }
+
+    pub fn right_score(&self) -> u8 {
+        self.right_score
     }
 }
 

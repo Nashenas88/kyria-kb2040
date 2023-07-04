@@ -74,8 +74,6 @@ pub(crate) struct KeyboardPins {
     pub(crate) is_right: bool,
     pub(crate) sda0: Pin<Gpio12, FunctionI2C, PullUp>,
     pub(crate) scl0: Pin<Gpio1, FunctionI2C, PullUp>,
-    pub(crate) sda1: Pin<Gpio2, FunctionI2C, PullUp>,
-    pub(crate) scl1: Pin<Gpio3, FunctionI2C, PullUp>,
     pub(crate) boot_button: Pin<Gpio11, FunctionSioInput, PullUp>,
     pub(crate) col0: ColPin,
     pub(crate) col1: ColPin,
@@ -96,6 +94,8 @@ pub(crate) struct Core1Pins {
     pub(crate) rgb: RgbPin,
     pub(crate) rotary1: Pin<Gpio29, FunctionSioInput, PullUp>,
     pub(crate) rotary2: Pin<Gpio28, FunctionSioInput, PullUp>,
+    pub(crate) display_sda: Pin<Gpio2, FunctionI2C, PullUp>,
+    pub(crate) display_scl: Pin<Gpio3, FunctionI2C, PullUp>,
 }
 
 #[cfg(feature = "sf2040")]
@@ -103,8 +103,6 @@ pub(crate) struct KeyboardPins {
     pub(crate) is_right: bool,
     pub(crate) sda0: Pin<Gpio16, FunctionI2C, PullUp>,
     pub(crate) scl0: Pin<Gpio1, FunctionI2C, PullUp>,
-    pub(crate) sda1: Pin<Gpio2, FunctionI2C, PullUp>,
-    pub(crate) scl1: Pin<Gpio3, FunctionI2C, PullUp>,
     pub(crate) col0: ColPin,
     pub(crate) col1: ColPin,
     pub(crate) col2: ColPin,
@@ -124,6 +122,8 @@ pub(crate) struct Core1Pins {
     pub(crate) rgb: RgbPin,
     pub(crate) rotary1: Pin<Gpio29, FunctionSioInput, PullUp>,
     pub(crate) rotary2: Pin<Gpio28, FunctionSioInput, PullUp>,
+    pub(crate) display_sda: Pin<Gpio2, FunctionI2C, PullUp>,
+    pub(crate) display_scl: Pin<Gpio3, FunctionI2C, PullUp>,
 }
 
 #[cfg(feature = "pico")]
@@ -131,8 +131,6 @@ pub(crate) struct KeyboardPins {
     pub(crate) is_right: bool,
     pub(crate) sda0: Pin<Gpio20, FunctionI2C, PullUp>,
     pub(crate) scl0: Pin<Gpio21, FunctionI2C, PullUp>,
-    pub(crate) sda1: Pin<Gpio18, FunctionI2C, PullUp>,
-    pub(crate) scl1: Pin<Gpio19, FunctionI2C, PullUp>,
     pub(crate) boot_button: Pin<Gpio28, FunctionSioInput, PullUp>,
     pub(crate) led: Pin<Gpio25, FunctionSioOutput, PullNone>,
     pub(crate) col0: ColPin,
@@ -154,6 +152,8 @@ pub(crate) struct Core1Pins {
     pub(crate) rgb: RgbPin,
     pub(crate) rotary1: Pin<Gpio26, FunctionSioInput, PullUp>,
     pub(crate) rotary2: Pin<Gpio27, FunctionSioInput, PullUp>,
+    pub(crate) display_sda: Pin<Gpio18, FunctionI2C, PullUp>,
+    pub(crate) display_scl: Pin<Gpio19, FunctionI2C, PullUp>,
 }
 
 #[cfg(feature = "kb2040")]
@@ -234,8 +234,6 @@ pub(crate) fn get_pins(pins: crate::bsp::Pins) -> KeyboardPins {
         is_right,
         sda0: pins.sda.into_pull_type().into_function(),
         scl0: pins.rx.into_pull_type().into_function(),
-        sda1: pins.d2.into_pull_type().into_function(),
-        scl1: pins.d3.into_pull_type().into_function(),
         boot_button: pins.d11.into_pull_up_input(),
         col0,
         col1,
@@ -333,8 +331,6 @@ pub(crate) fn get_pins(pins: crate::bsp::Pins) -> KeyboardPins {
         is_right,
         sda0: pins.sda.into_pull_type().into_function(),
         scl0: pins.rx0.into_pull_type().into_function(),
-        sda1: pins.gpio2.into_pull_type().into_function(),
-        scl1: pins.gpio3.into_pull_type().into_function(),
         col0,
         col1,
         col2,
@@ -365,8 +361,6 @@ pub(crate) fn get_pins(pins: crate::bsp::Pins) -> KeyboardPins {
         is_right: pin16.is_low().unwrap(),
         sda0: pins.gpio20.into_pull_type().into_function(),
         scl0: pins.gpio21.into_pull_type().into_function(),
-        sda1: pins.gpio18.into_pull_type().into_function(),
-        scl1: pins.gpio19.into_pull_type().into_function(),
         boot_button: pins.gpio28.into_pull_up_input(),
         led: pins.led.into_pull_type().into_push_pull_output(),
         col0: pins.gpio2.into_pull_up_input().into_dyn_pin(),
@@ -406,6 +400,8 @@ pub(crate) fn core1_pins(pins: crate::bsp::Pins) -> Core1Pins {
         rgb: pins.tx.into_function(),
         rotary1: pins.a3.into_pull_up_input(),
         rotary2: pins.a2.into_pull_up_input(),
+        display_sda: pins.d2.into_pull_type().into_function(),
+        display_scl: pins.d3.into_pull_type().into_function(),
     }
 }
 
@@ -415,6 +411,8 @@ pub(crate) fn core1_pins(pins: crate::bsp::Pins) -> Core1Pins {
         rgb: pins.tx0.into_function(),
         rotary1: pins.adc3.into_pull_up_input(),
         rotary2: pins.adc2.into_pull_up_input(),
+        display_sda: pins.gpio2.into_pull_type().into_function(),
+        display_scl: pins.gpio3.into_pull_type().into_function(),
     }
 }
 
@@ -424,5 +422,7 @@ pub(crate) fn core1_pins(pins: crate::bsp::Pins) -> Core1Pins {
         rgb: pins.gpio17.into_function(),
         rotary1: pins.gpio26.into_pull_up_input(),
         rotary2: pins.gpio27.into_pull_up_input(),
+        display_sda: pins.gpio18.into_pull_type().into_function(),
+        display_scl: pins.gpio19.into_pull_type().into_function(),
     }
 }

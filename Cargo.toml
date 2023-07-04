@@ -67,7 +67,7 @@ tracing = "0.1.25"
 "sf2040" = ["sparkfun-pro-micro-rp2040", "panic-halt"]
 "pico" = ["rp-pico", "defmt", "panic-probe"]
 "defmt" = ["dep:defmt", "defmt-rtt", "rp2040-hal/defmt"]
-"std" = []
+"std" = ["rand/std"]
 "debug" = []
 
 [[bin]]

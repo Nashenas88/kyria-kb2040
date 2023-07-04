@@ -1,6 +1,6 @@
 use arraydeque::ArrayDeque;
 use druid::keyboard_types::{Key, KeyState};
-use druid::widget::{prelude::*, Controller};
+use druid::widget::prelude::*;
 use druid::widget::{Button, Checkbox, Flex, Label, Slider};
 use druid::{
     AppLauncher, Color, Data, KeyEvent, Lens, Point, Rect, TimerToken, WidgetExt, WindowDesc,
@@ -69,6 +69,7 @@ impl Grid {
                     CustomAction::SymLed => Some(AnimKind::Sym),
                     CustomAction::FunctionLed => Some(AnimKind::Function),
                     CustomAction::RainbowLed => Some(AnimKind::Rainbow),
+                    CustomAction::Core1Error(e) => Some(AnimKind::Error(e)),
                     _ => None,
                 } {
                     if let (SwitchKind::Momentary, PressEvent::Press) =
@@ -103,7 +104,7 @@ impl Grid {
                 }
             }
 
-            let leds = self.anim_controller.leds();
+            let leds = self.anim_controller.leds(true);
             for (led, color) in leds.into_iter().enumerate() {
                 self[led] = Color::rgb8(color.r, color.g, color.b);
             }
@@ -591,6 +592,43 @@ fn make_widget() -> impl Widget<AppData> {
                             Button::new("Right Down")
                                 .on_click(handle_stick(&RIGHT, -1))
                                 .lens(AppData::ignore)
+                                .padding((5., 5.)),
+                            1.0,
+                        )
+                        .padding(8.0),
+                )
+                .with_child(
+                    // a row with error
+                    Flex::row()
+                        .with_flex_child(
+                            // Error 1 button
+                            Button::new("Error 1")
+                                .on_click(handle_click(CustomAction::Core1Error(1)))
+                                .lens(AppData::layer)
+                                .padding((5., 5.)),
+                            1.0,
+                        )
+                        .with_flex_child(
+                            // Error 2 button
+                            Button::new("Error 2")
+                                .on_click(handle_click(CustomAction::Core1Error(2)))
+                                .lens(AppData::layer)
+                                .padding((5., 5.)),
+                            1.0,
+                        )
+                        .with_flex_child(
+                            // Error 3 button
+                            Button::new("Error 3")
+                                .on_click(handle_click(CustomAction::Core1Error(3)))
+                                .lens(AppData::layer)
+                                .padding((5., 5.)),
+                            1.0,
+                        )
+                        .with_flex_child(
+                            // Error 4 button
+                            Button::new("Error 4")
+                                .on_click(handle_click(CustomAction::Core1Error(4)))
+                                .lens(AppData::layer)
                                 .padding((5., 5.)),
                             1.0,
                         )
