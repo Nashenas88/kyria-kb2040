@@ -39,6 +39,8 @@ jobs:
     name: Linting
     runs-on: ubuntu-latest
     steps:
+      - name: Install pango for druid deps
+        run: sudo apt-get install -y pango
       - uses: actions/checkout@v2
         with:
           submodules: true
@@ -67,8 +69,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --tests --lib --target x86_64-unknown-linux-gnu --features std -- -D warnings
-      - name: Install pango for core1_emulator
-        run: sudo apt-get install -y pango
       - name: Clippy core1_emulator
         uses: actions-rs/clippy-check@v1
         with:
