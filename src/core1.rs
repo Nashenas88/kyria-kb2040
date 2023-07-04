@@ -323,6 +323,7 @@ fn TIMER_IRQ_1() {
 }
 
 fn draw_rust(display: &mut Display) {
+    display.clear_buffer();
     let bmp =
         Bmp::from_slice(include_bytes!("./assets/rust.bmp")).expect("Failed to load BMP image");
 
