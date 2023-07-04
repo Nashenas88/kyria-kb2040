@@ -66,8 +66,6 @@ fn test_written() {
     let mut wrapper = Wrapper::new(&mut buf);
     let _ = writeln!(&mut wrapper, "set_ui {}", data);
     let written = wrapper.written();
-    let s = format!("{}", unsafe {
-        core::str::from_utf8_unchecked(&buf[..written])
-    });
+    let s = unsafe { core::str::from_utf8_unchecked(&buf[..written]) };
     assert_eq!(s, "set_ui 5\n");
 }

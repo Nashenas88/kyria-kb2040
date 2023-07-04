@@ -69,7 +69,6 @@ impl Grid {
                     CustomAction::SymLed => Some(AnimKind::Sym),
                     CustomAction::FunctionLed => Some(AnimKind::Function),
                     CustomAction::RainbowLed => Some(AnimKind::Rainbow),
-                    CustomAction::Core1Error(e) => Some(AnimKind::Error(e)),
                     _ => None,
                 } {
                     if let (SwitchKind::Momentary, PressEvent::Press) =
@@ -197,7 +196,7 @@ impl Widget<AppData> for LedStripWidget {
     fn paint(&mut self, ctx: &mut PaintCtx, data: &AppData, _env: &Env) {
         let size: Size = ctx.size();
         let w0 = size.width / POOL_SIZE as f64;
-        let h0 = size.height as f64;
+        let h0 = size.height;
         let cell_size = Size {
             width: w0,
             height: w0,
@@ -592,43 +591,6 @@ fn make_widget() -> impl Widget<AppData> {
                             Button::new("Right Down")
                                 .on_click(handle_stick(&RIGHT, -1))
                                 .lens(AppData::ignore)
-                                .padding((5., 5.)),
-                            1.0,
-                        )
-                        .padding(8.0),
-                )
-                .with_child(
-                    // a row with error
-                    Flex::row()
-                        .with_flex_child(
-                            // Error 1 button
-                            Button::new("Error 1")
-                                .on_click(handle_click(CustomAction::Core1Error(1)))
-                                .lens(AppData::layer)
-                                .padding((5., 5.)),
-                            1.0,
-                        )
-                        .with_flex_child(
-                            // Error 2 button
-                            Button::new("Error 2")
-                                .on_click(handle_click(CustomAction::Core1Error(2)))
-                                .lens(AppData::layer)
-                                .padding((5., 5.)),
-                            1.0,
-                        )
-                        .with_flex_child(
-                            // Error 3 button
-                            Button::new("Error 3")
-                                .on_click(handle_click(CustomAction::Core1Error(3)))
-                                .lens(AppData::layer)
-                                .padding((5., 5.)),
-                            1.0,
-                        )
-                        .with_flex_child(
-                            // Error 4 button
-                            Button::new("Error 4")
-                                .on_click(handle_click(CustomAction::Core1Error(4)))
-                                .lens(AppData::layer)
                                 .padding((5., 5.)),
                             1.0,
                         )

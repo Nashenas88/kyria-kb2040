@@ -37,6 +37,7 @@ pub struct Pong {
 }
 
 impl Pong {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             state: StateMachine::Start(StartState(PlayState::new())),
@@ -156,8 +157,8 @@ impl Ball {
     }
 
     fn r#move(&mut self) {
-        self.pos.x = self.pos.x + self.vel.x;
-        self.pos.y = self.pos.y + self.vel.y;
+        self.pos.x += self.vel.x;
+        self.pos.y += self.vel.y;
     }
 
     fn collide_at_angle<const X: u8>(&mut self, paddle: Paddle<X>) {
@@ -193,19 +194,19 @@ impl Ball {
     }
 
     pub fn left(&self) -> f32 {
-        self.pos.x as f32 - BALL_RADIUS
+        self.pos.x - BALL_RADIUS
     }
 
     pub fn right(&self) -> f32 {
-        self.pos.x as f32 + BALL_RADIUS
+        self.pos.x + BALL_RADIUS
     }
 
     pub fn top(&self) -> f32 {
-        self.pos.y as f32 - BALL_RADIUS
+        self.pos.y - BALL_RADIUS
     }
 
     pub fn bottom(&self) -> f32 {
-        self.pos.y as f32 + BALL_RADIUS
+        self.pos.y + BALL_RADIUS
     }
 }
 
@@ -220,6 +221,7 @@ pub struct PlayState {
 }
 
 impl PlayState {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self::from_scores(0, 0)
     }

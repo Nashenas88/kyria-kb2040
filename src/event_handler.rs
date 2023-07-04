@@ -13,7 +13,7 @@ pub trait EventHandler {
     fn usb_configured(&self) -> bool;
 }
 
-struct Handler<T> {
+pub struct Handler<T> {
     event_handler: T,
     layout: Layout,
     last_media_report: MediaKeyboardReport,
@@ -23,7 +23,7 @@ impl<T> Handler<T>
 where
     T: EventHandler,
 {
-    fn handle_event(&mut self, event: Option<Event>)
+    pub fn handle_event(&mut self, event: Option<Event>)
     where
         T: EventHandler,
     {
