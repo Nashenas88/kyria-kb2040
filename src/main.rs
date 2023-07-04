@@ -5,7 +5,7 @@
 
 use crate::pins::{
     get_pins, BootButton, ColPin, CommsI2cScl, CommsI2cSda, ControllerI2cScl, ControllerI2cSda,
-    DisplayI2cScl, DisplayI2cSda, LedPin, RowPin,
+    LedPin, RowPin,
 };
 #[cfg(feature = "kb2040")]
 use adafruit_kb2040 as bsp;
@@ -18,17 +18,11 @@ use bsp::hal::timer::{Alarm, Timer};
 use bsp::hal::usb::UsbBus;
 use bsp::hal::watchdog::Watchdog;
 use bsp::hal::{Clock, Sio, I2C};
-use bsp::pac::{I2C0, I2C1};
+use bsp::pac::I2C0;
 use bsp::XOSC_CRYSTAL_FREQ;
-use core::fmt::Write;
 use core::sync::atomic::{AtomicU8, Ordering};
 #[cfg(feature = "pico")]
 use defmt_rtt as _;
-use embedded_graphics::draw_target::DrawTargetExt;
-use embedded_graphics::image::Image;
-use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::Point;
-use embedded_graphics::Drawable;
 #[cfg(any(feature = "kb2040", feature = "pico"))]
 use embedded_hal::digital::v2::InputPin;
 #[cfg(feature = "pico")]
@@ -52,12 +46,6 @@ use panic_probe as _;
 use rp_pico as bsp;
 #[cfg(feature = "sf2040")]
 use sparkfun_pro_micro_rp2040 as bsp;
-use ssd1306::mode::{DisplayConfig, TerminalMode};
-use ssd1306::prelude::I2CInterface;
-use ssd1306::rotation::DisplayRotation;
-use ssd1306::size::DisplaySize128x64;
-use ssd1306::Ssd1306;
-use tinybmp::Bmp;
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::UsbDeviceState;
 use usbd_hid::descriptor::{MediaKey, MediaKeyboardReport, SerializedDescriptor};
@@ -67,11 +55,6 @@ mod core1;
 mod pins;
 
 type I2C0Controller = I2C<I2C0, (ControllerI2cSda, ControllerI2cScl)>;
-type Display = Ssd1306<
-    I2CInterface<I2C<I2C1, (DisplayI2cSda, DisplayI2cScl)>>,
-    DisplaySize128x64,
-    TerminalMode,
->;
 type I2CPeripheral = I2CPeripheralEventIterator<I2C0, (CommsI2cSda, CommsI2cScl)>;
 type I2CController = I2C0Controller;
 type ScannedKeys = ArrayDeque<u8, BOARD_MAX_KEYS, behavior::Wrapping>;
@@ -148,7 +131,6 @@ mod app {
         media_class: Option<HIDClass<'static, bsp::hal::usb::UsbBus>>,
         media_report: MediaKeyboardReport,
         i2c0: Either<I2CPeripheral, I2CController>,
-        display: Display,
         alarm0: bsp::hal::timer::Alarm0,
         #[lock_free]
         watchdog: bsp::hal::watchdog::Watchdog,
@@ -237,42 +219,6 @@ mod app {
                 I2C_PERIPHERAL_ADDR as u16,
             ))
         };
-
-        // Create the I²C driver, using the two pre-configured pins. This will fail
-        // at compile time if the pins are in the wrong mode, or if this I²C
-        // peripheral isn't available on these pins!
-        let i2c1 = bsp::hal::I2C::i2c1(
-            c.device.I2C1,
-            keyboard_pins.sda1,
-            keyboard_pins.scl1,
-            400.kHz(),
-            &mut resets,
-            clocks.peripheral_clock.freq(),
-        );
-
-        // Create the I²C display interface:
-        let interface = ssd1306::I2CDisplayInterface::new(i2c1);
-
-        // Create a driver instance and initialize:
-        let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate180)
-            .into_buffered_graphics_mode();
-        display.init().unwrap();
-
-        let bmp =
-            Bmp::from_slice(include_bytes!("./assets/rust.bmp")).expect("Failed to load BMP image");
-
-        // The image is an RGB565 encoded BMP, so specifying the type as `Image<Bmp<Rgb565>>` will
-        // read the pixels correctly
-        let im: Image<Bmp<Rgb565>> = Image::new(&bmp, Point::new(32, 0));
-
-        // We use the `color_converted` method here to automatically convert the RGB565 image data
-        // into BinaryColor values.
-        im.draw(&mut display.color_converted()).unwrap();
-
-        display.flush().unwrap();
-
-        let mut display = display.into_terminal_mode();
-        display.init().unwrap();
 
         let mut timer = Timer::new(c.device.TIMER, &mut resets, &clocks);
 
@@ -363,12 +309,6 @@ mod app {
         sio.fifo.write_blocking(TIMER_ADDR as *const _ as u32);
         let sio_fifo = sio.fifo;
 
-        if is_right {
-            display.write_str("Right\n").unwrap();
-        } else {
-            display.write_str("Left\n").unwrap();
-        }
-
         // Do not enable watchdog when debugging.
         #[cfg(not(feature = "debug"))]
         {
@@ -385,7 +325,6 @@ mod app {
                     usage_id: MediaKey::Zero.into(),
                 },
                 usb_dev,
-                display,
                 i2c0,
                 alarm0,
                 watchdog,
@@ -568,7 +507,6 @@ mod app {
             &is_right,
             scanned_events,
             i2c0,
-            display,
         ],
         local = [sio_fifo, boot_button, led]
     )]

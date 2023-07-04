@@ -14,12 +14,25 @@ pub enum CustomAction {
     SymLed,
     FunctionLed,
     RainbowLed,
+    PongMode,
+    PongEvent(PongEvent),
     MediaPlayPause,
     MediaNext,
     MediaBack,
     MediaMute,
     MediaVolumeUp,
     MediaVolumeDown,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PongEvent {
+    Start,
+    ScoreLeft,
+    ScoreRight,
+    LeftUp,
+    LeftDown,
+    RightUp,
+    RightDown,
 }
 
 impl CustomAction {
@@ -32,13 +45,22 @@ impl CustomAction {
             | CustomAction::NavLed
             | CustomAction::SymLed
             | CustomAction::FunctionLed
-            | CustomAction::RainbowLed => true,
+            | CustomAction::RainbowLed
+            | CustomAction::PongMode
+            | CustomAction::PongEvent(_) => true,
             CustomAction::MediaPlayPause
             | CustomAction::MediaNext
             | CustomAction::MediaBack
             | CustomAction::MediaMute
             | CustomAction::MediaVolumeUp
             | CustomAction::MediaVolumeDown => false,
+        }
+    }
+
+    pub fn is_pong(&self) -> bool {
+        match self {
+            CustomAction::PongMode | CustomAction::PongEvent(_) => true,
+            _ => false,
         }
     }
 }
@@ -68,18 +90,7 @@ impl SerializableEvent {
     where
         Self: Sized,
     {
-        // NOTE: Keep in sync with serialize below!
-        let action = match a & ACTION_MASK {
-            1 => CustomAction::QwertyLed,
-            2 => CustomAction::ColemakLed,
-            3 => CustomAction::LayerSelectLed,
-            4 => CustomAction::NumpadLed,
-            5 => CustomAction::NavLed,
-            6 => CustomAction::SymLed,
-            7 => CustomAction::FunctionLed,
-            8 => CustomAction::RainbowLed,
-            _ => return None,
-        };
+        let action = CustomAction::try_from(a).ok()?;
         let event = match a & EVENT_MASK {
             PRESS_BIT => PressEvent::Press,
             RELEASE_BIT => PressEvent::Release,
@@ -109,6 +120,7 @@ impl CustomEventExt for SerializableEvent {
     }
 }
 
+// NOTE: Keep in sync with try_from below!
 impl From<CustomAction> for u8 {
     fn from(action: CustomAction) -> Self {
         match action {
@@ -120,8 +132,44 @@ impl From<CustomAction> for u8 {
             CustomAction::SymLed => 6,
             CustomAction::FunctionLed => 7,
             CustomAction::RainbowLed => 8,
+            CustomAction::PongMode => 9,
+            CustomAction::PongEvent(e) => match e {
+                PongEvent::Start => 10,
+                PongEvent::ScoreLeft => 11,
+                PongEvent::ScoreRight => 12,
+                PongEvent::LeftUp => 13,
+                PongEvent::LeftDown => 14,
+                PongEvent::RightUp => 15,
+                PongEvent::RightDown => 16,
+            },
             _ => panic!("only led codes can serialize to integer"),
         }
+    }
+}
+
+impl TryFrom<u8> for CustomAction {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value & ACTION_MASK {
+            1 => CustomAction::QwertyLed,
+            2 => CustomAction::ColemakLed,
+            3 => CustomAction::LayerSelectLed,
+            4 => CustomAction::NumpadLed,
+            5 => CustomAction::NavLed,
+            6 => CustomAction::SymLed,
+            7 => CustomAction::FunctionLed,
+            8 => CustomAction::RainbowLed,
+            9 => CustomAction::PongMode,
+            10 => CustomAction::PongEvent(PongEvent::Start),
+            11 => CustomAction::PongEvent(PongEvent::ScoreLeft),
+            12 => CustomAction::PongEvent(PongEvent::ScoreRight),
+            13 => CustomAction::PongEvent(PongEvent::LeftUp),
+            14 => CustomAction::PongEvent(PongEvent::LeftDown),
+            15 => CustomAction::PongEvent(PongEvent::RightUp),
+            16 => CustomAction::PongEvent(PongEvent::RightDown),
+            _ => return Err(()),
+        })
     }
 }
 
@@ -144,6 +192,7 @@ const NAV: Action = ma![CustomAction::NavLed, d(4)];
 const SYM: Action = ma![CustomAction::SymLed, l(5)];
 const FUNC: Action = ma![CustomAction::FunctionLed, d(6)];
 const RBOW: Action = Action::Custom(CustomAction::RainbowLed);
+const PONG: Action = ma![CustomAction::PongMode, d(7)];
 
 const MP: Action = Action::Custom(CustomAction::MediaPlayPause);
 const MN: Action = Action::Custom(CustomAction::MediaNext);
@@ -152,13 +201,18 @@ const VM: Action = Action::Custom(CustomAction::MediaMute);
 const VU: Action = Action::Custom(CustomAction::MediaVolumeUp);
 const VD: Action = Action::Custom(CustomAction::MediaVolumeDown);
 
+const LU: Action = Action::Custom(CustomAction::PongEvent(PongEvent::LeftUp));
+const LD: Action = Action::Custom(CustomAction::PongEvent(PongEvent::LeftDown));
+const RU: Action = Action::Custom(CustomAction::PongEvent(PongEvent::RightUp));
+const RD: Action = Action::Custom(CustomAction::PongEvent(PongEvent::RightDown));
+
 /// The number of columns on the keyboard.
 pub const NCOLS: usize = 16;
 
 /// The number of rows on the keyboard.
 pub const NROWS: usize = 4;
 
-pub const NLAYERS: usize = 7;
+pub const NLAYERS: usize = 8;
 
 pub type Layout = keyberon::layout::Layout<NCOLS, NROWS, NLAYERS, CustomAction>;
 
@@ -257,7 +311,7 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
             [n     {MB}   {MP}   {MN}   {SYM}   BSpace Space {LAYER}    {LAYER} Enter  Delete {SYM}  {VD}   {VM}   {VU}     n     ]
         }
         { // (2) Layer Selector
-            [t  t       t    t       {RBOW}    t n  n          n      n  t {RBOW}    t        t    t       t]
+            [t  t       t   {PONG}   {RBOW}    t n  n          n      n  t {RBOW}    t        t    t       t]
             [t {QWERTY}{NAV}{NUM_PAD}{COLEMAK} t n  n          n      n  t {COLEMAK}{NUM_PAD}{NAV}{QWERTY} t]
             [t  t       t    t       {FUNC}    t t  t          t      t  t {FUNC}    t        t    t       t]
             [n  t       t    t       {SYM}     t t {LAYER}    {LAYER} t  t {SYM}     t        t    t       n]
@@ -285,6 +339,12 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
             [Tab    LShift LCtrl LAlt LGui F11    n     n    n n     F12    RGui RAlt RCtrl RShift t]
             [t      t      t     t    t    t      t     t    t t     t      t    t    t     t      t]
             [n      t      t     t    t    BSpace Space t    t Enter Delete t    t    t     t      n]
+        }
+        { // (7) Pong
+            [t t  t t  t t n n          n     n t t t  t t  t]
+            [t t  t t  t t n n          n     n t t t  t t  t]
+            [t t  t t  t t t t          t     t t t t  t t  t]
+            [n{LD}t{LU}t t t{LAYER}    {LAYER}t t t{RD}t{RU}n]
         }
     }
 };
