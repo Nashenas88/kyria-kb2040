@@ -565,7 +565,7 @@ mod app {
                     Ok(buf)
                 },
             );
-            #[allow(clippy::drop_copy)]
+            #[cfg_attr(not(feature = "pico"), allow(dropping_copy_types))]
             drop(dropg);
 
             if let Ok(data) = data {
