@@ -38,6 +38,7 @@ struct Grid {
 
 static mut LED_STATES: ArrayDeque<AnimKind, 2> = ArrayDeque::new();
 
+#[allow(clippy::new_without_default)]
 impl Grid {
     pub fn new() -> Grid {
         Grid {
