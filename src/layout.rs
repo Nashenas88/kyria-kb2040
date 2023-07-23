@@ -332,10 +332,10 @@ pub static LAYERS: keyberon::layout::Layers<NCOLS, NROWS, NLAYERS, CustomAction>
             [n      t       t       t       t       BSpace Space t    t Enter  Delete t       t       t       t       n]
         }
         { // (6) Function
-            [Escape F1     F2    F3   F4   F5     n     n    n n     F6     F7   F8   F9    F10    t]
-            [Tab    LShift LCtrl LAlt LGui F11    n     n    n n     F12    RGui RAlt RCtrl RShift t]
-            [t      t      t     t    t    t      t     t    t t     t      t    t    t     t      t]
-            [n      t      t     t    t    BSpace Space t    t Enter Delete t    t    t     t      n]
+            [Escape F1     F2    F3   F4   F5     n     n          n     n     F6     F7   F8   F9    F10    t]
+            [Tab    LShift LCtrl LAlt LGui F11    n     n          n     n     F12    RGui RAlt RCtrl RShift t]
+            [t      t      t     t    t    t      t     t          t     t     t      t    t    t     t      t]
+            [n      t      t     t    t    BSpace Space{LAYER}    {LAYER}Enter Delete t    t    t     t      n]
         }
         { // (7) Pong
             [t t  t t  t t n n          n     n t t t  t t  t]
